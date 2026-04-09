@@ -1,0 +1,19 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# Virtual environments
+.venv
+.gemini
+.env
+
+# HarnessCore runtime files (machine-generated, not for VCS)
+.harness/state.json
+.harness/journals.md
+
+# Temp research files
+docs/research_report_multiagent_pattern.html
