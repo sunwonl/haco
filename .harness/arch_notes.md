@@ -555,3 +555,122 @@ This file will use Python's built-in `unittest` module to test the `calculator.p
 - **Testing Framework**: Use `unittest` as specified by the task context.
 
 **Affected files**: backend/calculator.py, backend/test_calculator.py
+
+
+## Architecture Note
+
+# Calculator Frontend Design
+
+This document outlines the design for a simple calculator frontend, including its structure, styling, and interaction with an assumed backend API.
+
+## 1. Assumed Backend API
+
+Since no backend code was provided, we will assume a simple RESTful API accessible via a POST request to `/calculate`.
+
+-   **Endpoint**: `/calculate`
+-   **Method**: `POST`
+-   **Request Body (JSON)**:
+    ```json
+    {
+        "expression": "10 + 5 * 2"
+    }
+    ```
+    The `expression` field will contain the mathematical expression string to be evaluated by the backend.
+-   **Response Body (JSON)**:
+    ```json
+    {
+        "result": 20
+    }
+    ```
+    The `result` field will contain the calculated numerical result. In case of an error, an appropriate error message might be returned (e.g., `{"error": "Invalid expression"}`).
+
+## 2. File Structure
+
+Three files will be created:
+
+-   `index.html`: The main HTML page containing the calculator layout.
+-   `style.css`: Contains all CSS rules for styling the calculator.
+-   `script.js`: Contains the JavaScript logic for handling user input, building expressions, and interacting with the backend.
+
+## 3. `index.html` Structure
+
+-   A main `div` container for the calculator.
+-   A display area (e.g., `<input type="text" readonly>`) to show the current input/result.
+-   A grid of buttons for numbers (0-9), operations (+, -, *, /), clear (C), and equals (=).
+-   Links to `style.css` in the `<head>` and `script.js` at the end of the `<body>`.
+
+```html
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Simple Calculator</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="calculator">
+        <input type="text" class="calculator-display" value="0" readonly>
+        <div class="calculator-buttons">
+            <button class="operator" data-action="clear">C</button>
+            <button class="operator" data-action="divide">/</button>
+            <button class="operator" data-action="multiply">*</button>
+            <button class="operator" data-action="subtract">-</button>
+            <button>7</button>
+            <button>8</button>
+            <button>9</button>
+            <button>4</button>
+            <button>5</button>
+            <button>6</button>
+            <button class="operator" data-action="add">+</button>
+            <button>1</button>
+            <button>2</button>
+            <button>3</button>
+            <button class="decimal">.</button>
+            <button class="zero">0</button>
+            <button class="equals" data-action="calculate">=</button>
+        </div>
+    </div>
+    <script src="script.js"></script>
+</body>
+</html>
+```
+
+## 4. `style.css` Design
+
+-   Basic reset and body styling.
+-   Styling for the main `.calculator` container (e.g., `display: grid`, `grid-template-columns`, `background`, `border-radius`).
+-   Styling for the `.calculator-display` (font size, padding, text alignment).
+-   Styling for the `.calculator-buttons` grid.
+-   Styling for individual `button` elements (padding, font size, background, border).
+-   Specific styling for `.operator`, `.equals`, `.decimal`, and `.zero` buttons.
+
+## 5. `script.js` Logic
+
+-   **Event Listeners**: Attach click event listeners to all calculator buttons.
+-   **State Management**: Maintain the current display value and the expression string to be sent to the backend.
+-   **`handleButtonClick(event)` function**:
+    -   Identifies if the clicked button is a number, operator, decimal, clear, or equals.
+    -   **Numbers/Decimal**: Appends to the current display and expression string.
+    -   **Operators**: Appends to the expression string, handles precedence if necessary (though the backend is expected to handle full expression parsing).
+    -   **Clear (C)**: Resets the display and expression string.
+    -   **Equals (=)**:
+        -   Triggers the `sendExpressionToBackend()` function.
+        -   Updates the display with the result or error.
+-   **`sendExpressionToBackend(expression)` function**:
+    -   Takes the current `expression` string as input.
+    -   Uses `fetch` API to make a `POST` request to `/calculate`.
+    -   Sends the expression in the JSON format `{"expression": "..."}`.
+    -   Parses the JSON response.
+    -   Returns the `result` or an error message.
+-   **Display Update**: Updates the `calculator-display` element with the current input or the result from the backend.
+
+## 6. Design Constraints & Considerations
+
+-   **Error Handling**: The frontend should gracefully handle errors from the backend (e.g., division by zero, invalid expression). Display an 'Error' message to the user.
+-   **User Experience**: Ensure immediate visual feedback on button presses.
+-   **Expression Building**: For simplicity, the frontend will append operators and numbers. The backend is responsible for parsing the full expression string and handling operator precedence.
+-   **Backend URL**: The `script.js` will need a configurable URL for the backend (e.g., `http://localhost:8080/calculate`).
+-   **Input Validation**: Basic frontend validation might be added, but primary validation and calculation will occur on the backend.
+
+**Affected files**: index.html, style.css, script.js
