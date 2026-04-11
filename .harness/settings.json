@@ -1,7 +1,7 @@
 {
   "llm": {
     "provider": "google-genai",
-    "default_model": "gemini-2.0-flash",
+    "default_model": "gemini-2.5-flash",
     "agent_models": {}
   },
   "credentials": {
@@ -13,7 +13,7 @@
     "auto_commit": true
   },
   "agent_paths": {},
-  "max_iterations": 10,
+  "max_iterations": 6,
   "ignore_patterns": [
     ".git",
     "node_modules",

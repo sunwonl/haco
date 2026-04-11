@@ -75,6 +75,10 @@ class HarnessConfig(BaseModel):
     credentials: CredentialsConfig = Field(default_factory=CredentialsConfig)
     git: GitConfig = Field(default_factory=GitConfig)
 
+    project_root: Optional[str] = Field(
+        default=None, description="Override project root (default: cwd)"
+    )
+
     agent_paths: dict[str, str] = Field(
         default_factory=dict,
         description=(
