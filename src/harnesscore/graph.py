@@ -12,6 +12,7 @@ from harnesscore.config.loader import HarnessConfig
 from harnesscore.agents.po import po_node
 from harnesscore.agents.sa import sa_node
 from harnesscore.agents.cd import cd_node
+from harnesscore.agents.qa import qa_node
 
 
 def dummy_node(agent_name: str):
@@ -58,14 +59,17 @@ def build_graph(config: HarnessConfig, checkpointer: Any = None):
     def wrapped_cd(state: SystemState):
         return cd_node(state, config)
 
+    def wrapped_qa(state: SystemState):
+        return qa_node(state, config)
+
     builder.add_node("PO", wrapped_po)
     builder.add_node("System Architect", wrapped_sa)
     builder.add_node("Core Developer", wrapped_cd)
+    builder.add_node("QA Evaluator", wrapped_qa)
 
     # Temporary stubs for remaining agents
     builder.add_node("Design Reviewer", dummy_node("Design Reviewer"))
     builder.add_node("UI Engineer", dummy_node("UI Engineer"))
-    builder.add_node("QA Evaluator", dummy_node("QA Evaluator"))
 
     # 3. Add Edges
     # The start always goes to PO
