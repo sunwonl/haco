@@ -7,12 +7,13 @@
 ## 1. [Plan] 계획 그룹 도구 리스트
 
 ### 1.1 오케스트레이터 (PO - Product Owner)
-PO는 시스템의 상태를 전역적으로 이해하고 태스크를 기록하며, 유저와 소통하는 역할이기 때문에 소스 코드 직접 수정 권한은 부여하지 않습니다.
+PO는 시스템의 상태를 전역적으로 이해하고 태스크를 기록하며, 유저와 소통하는 역할입니다. 최초 응대 시 상황 파악을 위해 기본적인 조회 도구를 가집니다.
 
-*   `Update_Task_Board`: LangGraph State 내의 작업 목록(Task List)을 업데이트, 상태 변경(TODO -> IN_PROGRESS -> DONE).
-*   `Ask_Human_Clarification` (HITL): 사용자에게 요구사항 모호성에 대한 질문을 팝업/알림으로 전달하고 응답 대기.
-*   `Read_Issue_Context`: 최초 사용자가 작성한 PRD나 Git Issue 내용을 읽어오는 도구.
-*   `Assign_Agent`: 분석된 Task를 바탕으로 System Architect, Developer, UI Engineer 중 하나를 다음 노드로 라우팅.
+*   **File I/O (Read-only)**: `View_File`, `List_Directory`.
+*   **System Diagnostics**: `ShellTool`을 통한 `ls`, `git status`, `env` 등 단순 조회성 명령 실행.
+*   `Update_Task_Board`: LangGraph State 내의 작업 목록 업데이트.
+*   `Ask_Human_Clarification` (HITL): 사용자에게 질문 전달 및 응답 대기.
+*   `Assign_Agent`: 분석된 Task를 바탕으로 적절한 에이전트 라우팅.
 
 ### 1.2 시스템 설계자 (System Architect)
 아키텍처의 기준이 되는 설계 문서 저장 및 코드베이스의 거시적 맥락을 파악합니다.

@@ -1,22 +1,18 @@
 """
 System Architect agent node.
-
-Responsibilities:
-- Search the codebase for relevant context (existing models, APIs, structures).
-- Produce an architecture document / design note to guide downstream developers.
-- Mark its assigned task(s) as completed and hand control back to PO.
 """
-from __future__ import annotations
-
 import json
 from pathlib import Path
+from typing import List, Dict, Any
 
 from langchain_core.messages import HumanMessage, SystemMessage
 from pydantic import BaseModel, Field
 
 from harnesscore.schema import SystemState, TaskLog
 from harnesscore.config.loader import HarnessConfig
-from harnesscore.llm import get_llm
+from harnesscore.llm import get_llm, extract_token_usage
+from harnesscore.utils.journaler import Journaler
+from harnesscore.utils.prompt_manager import PromptManager
 from harnesscore.tools.file_io import FileIOTool
 
 
@@ -35,12 +31,16 @@ You have the following context available:
 - completed_tasks: Tasks already finished.
 - codebase_context: Relevant files and snippets found by a prior search.
 
+Always be helpful and conversational. Explain your analysis in the 'response_to_user' field.
 Produce your response using structured output only.
 """
 
 
 class SADecision(BaseModel):
-    reasoning: str = Field(description="Summary of your design decision.")
+    reasoning: str = Field(description="Summary of your internal design decision.")
+    response_to_user: str = Field(
+        description="A direct, helpful message to the user explaining your analysis and design."
+    )
     architecture_note: str = Field(
         description=(
             "A markdown-formatted design note that describes: "
@@ -49,12 +49,14 @@ class SADecision(BaseModel):
             "3) Any important design constraints."
         )
     )
-    affected_files: list[str] = Field(
+    affected_files: List[str] = Field(
         description="List of relative file paths that will be created or modified."
     )
-    resolved_task_ids: list[str] = Field(
+    resolved_task_ids: List[str] = Field(
         description="IDs of tasks from the task list that this analysis has resolved."
     )
+
+SADecision.model_rebuild()
 
 
 def _gather_codebase_context(
@@ -84,7 +86,6 @@ def sa_node(state: SystemState, config: HarnessConfig) -> dict:
     harness_dir = project_root / ".harness"
 
     # --- 1. Gather codebase context ----------------------------------------
-    # Use up to 3 keywords from the user prompt for search
     keywords = state.user_prompt.split()[:3]
     codebase_context = _gather_codebase_context(project_root, " ".join(keywords))
 
@@ -97,7 +98,7 @@ def sa_node(state: SystemState, config: HarnessConfig) -> dict:
 
     # --- 3. Call the LLM -----------------------------------------------------
     llm = get_llm(config, "System Architect")
-    structured_llm = llm.with_structured_output(SADecision)
+    structured_llm = llm.with_structured_output(SADecision, include_raw=True)
 
     context_text = (
         f"User Prompt: {state.user_prompt}\n"
@@ -106,11 +107,22 @@ def sa_node(state: SystemState, config: HarnessConfig) -> dict:
         f"\nCodebase Context (relevant snippets):\n{codebase_context}\n"
     )
 
-    decision: SADecision = structured_llm.invoke(
-        [SystemMessage(content=SA_SYSTEM_PROMPT), HumanMessage(content=context_text)]
+    print("[System Architect] Calling LLM for design...")
+    
+    # Load custom instructions
+    custom_instr = PromptManager.load_custom_instructions(harness_dir, "System Architect")
+    
+    raw_result = structured_llm.invoke(
+        [SystemMessage(content=SA_SYSTEM_PROMPT + custom_instr), HumanMessage(content=context_text)]
     )
+    
+    decision: SADecision = raw_result["parsed"]
+    raw_resp = raw_result["raw"]
+    
+    # Extract token usage
+    tokens = extract_token_usage(raw_resp)
 
-    print(f"[System Architect] Design complete. Resolved tasks: {decision.resolved_task_ids}")
+    print(f"[System Architect] Design complete. Resolved: {decision.resolved_task_ids}")
 
     # --- 4. Persist architecture note to .harness/arch_notes.md -------------
     arch_file = harness_dir / "arch_notes.md"
@@ -127,17 +139,28 @@ def sa_node(state: SystemState, config: HarnessConfig) -> dict:
     log = TaskLog(
         agent_name="System Architect",
         action_type="DESIGN",
-        details=(
-            f"Architecture note written. "
-            f"Resolved: {decision.resolved_task_ids}. "
-            f"Affected files: {decision.affected_files}"
+        input_context=context_text,
+        details=decision.response_to_user,
+        logs=(
+            f"Reasoning: {decision.reasoning}\n"
+            f"Affected files: {decision.affected_files}\n"
+            f"Codebase context search size: {len(codebase_context)} chars."
         ),
         status="SUCCESS",
+        tokens=tokens
+    )
+
+    # Explicit Journaling
+    Journaler.log_activity(
+        harness_dir=config.harness_dir,
+        thread_id=getattr(state, "thread_id", "unknown"),
+        log_data=log.model_dump(),
+        language=config.language
     )
 
     return {
         "current_assignee": "System Architect",
-        "next_agent": "PO",  # Always return control to PO after SA finishes
+        "next_agent": "PO",
         "completed_tasks": new_completed,
         "history_logs": [log],
     }

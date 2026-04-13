@@ -1,15 +1,10 @@
 """
 Configuration loader for .harness/settings.json.
-
-On first run (`harness init`), this generates a default settings.json
-and prompts the user to configure credentials via environment variables.
 """
-from __future__ import annotations
-
 import json
 import os
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Dict, List
 
 from pydantic import BaseModel, Field
 
@@ -29,7 +24,7 @@ class LLMConfig(BaseModel):
         default="gemini-2.0-flash",
         description="Model used by all agents unless overridden by agent_models",
     )
-    agent_models: dict[str, str] = Field(
+    agent_models: Dict[str, str] = Field(
         default_factory=dict,
         description=(
             "Per-agent model overrides, e.g. "
@@ -79,7 +74,7 @@ class HarnessConfig(BaseModel):
         default=None, description="Override project root (default: cwd)"
     )
 
-    agent_paths: dict[str, str] = Field(
+    agent_paths: Dict[str, str] = Field(
         default_factory=dict,
         description=(
             "Per-agent file-access root directories, e.g. "
@@ -90,25 +85,55 @@ class HarnessConfig(BaseModel):
         default=10,
         description="Maximum QA retry loops before HITL interrupt",
     )
-    ignore_patterns: list[str] = Field(
+    ignore_patterns: List[str] = Field(
         default_factory=lambda: [".git", "node_modules", "__pycache__", ".harness"],
         description="Path patterns excluded from agent file access",
     )
-    mcp_servers: dict[str, str] = Field(
+    mcp_servers: Dict[str, str] = Field(
         default_factory=dict,
         description="MCP server name → endpoint URL",
     )
+    language: str = Field(
+        default="en",
+        description="Language for journals and logs (en, ko, etc.)",
+    )
 
-    # -------------------------------------------------------------- #
-    #  Convenience helpers                                             #
-    # -------------------------------------------------------------- #
+    @property
+    def harness_dir(self) -> Path:
+        """Return the absolute path to the .harness directory."""
+        root = Path(self.project_root) if self.project_root else Path.cwd()
+        return root / ".harness"
+
     def model_for_agent(self, agent_name: str) -> str:
         """Return the model to use for *agent_name* (falls back to default)."""
         return self.llm.agent_models.get(agent_name, self.llm.default_model)
 
     def resolve_api_key(self) -> Optional[str]:
-        """Read the API key from the configured environment variable."""
-        return os.environ.get(self.credentials.api_key_env)
+        """Read the API key from the configured environment variable or .env file."""
+        # 1. Try environment first
+        key = os.environ.get(self.credentials.api_key_env)
+        if key and key.strip():
+            return key
+            
+        # 2. Try .env in project root (or CWD) explicitly
+        root = Path(self.project_root) if self.project_root else Path.cwd()
+        env_path = root / ".env"
+        
+        if env_path.exists():
+            try:
+                from dotenv import load_dotenv
+                # Use override=True to ensure .env values take precedence if environment is dirty
+                load_dotenv(dotenv_path=env_path, override=True)
+                key = os.environ.get(self.credentials.api_key_env)
+                if not key:
+                    print(f"  [Diagnostics] Found .env at {env_path}, but {self.credentials.api_key_env} is missing inside.")
+                return key
+            except ImportError:
+                pass
+        else:
+            print(f"  [Diagnostics] No .env found at {env_path}")
+        
+        return None
 
 
 # ------------------------------------------------------------------ #
@@ -129,3 +154,8 @@ def load_config(path: Optional[Path] = None) -> HarnessConfig:
     config = HarnessConfig()
     settings_path.write_text(config.model_dump_json(indent=2))
     return config
+
+LLMConfig.model_rebuild()
+CredentialsConfig.model_rebuild()
+GitConfig.model_rebuild()
+HarnessConfig.model_rebuild()

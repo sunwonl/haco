@@ -38,21 +38,25 @@ class FileCheckpointer(BaseCheckpointSaver):
     # ------------------------------------------------------------------ #
     def _load_raw(self) -> dict:
         if self.state_path.exists():
-            with self.state_path.open() as f:
-                return json.load(f)
+            try:
+                with self.state_path.open(encoding="utf-8") as f:
+                    return json.load(f)
+            except json.JSONDecodeError:
+                return {}
         return {}
 
     def _save_raw(self, data: dict) -> None:
-        with self.state_path.open("w") as f:
-            json.dump(data, f, indent=2, default=str)
+        # Use a custom encoder to handle Pydantic models
+        class PydanticEncoder(json.JSONEncoder):
+            def default(self, obj):
+                if hasattr(obj, "model_dump"):
+                    return obj.model_dump()
+                if isinstance(obj, datetime):
+                    return obj.isoformat()
+                return super().default(obj)
 
-    def _append_journal(self, thread_id: str, node: str, summary: str) -> None:
-        ts = datetime.now(tz=timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
-        entry = f"\n## [{ts}] `{thread_id}` → **{node}**\n{summary}\n"
-        if not self.journal_path.exists():
-            self.journal_path.write_text("# HarnessCore Activity Journal\n")
-        with self.journal_path.open("a") as f:
-            f.write(entry)
+        with self.state_path.open("w", encoding="utf-8") as f:
+            json.dump(data, f, indent=2, cls=PydanticEncoder, ensure_ascii=False)
 
     # ------------------------------------------------------------------ #
     #  BaseCheckpointSaver interface                                       #
@@ -105,8 +109,6 @@ class FileCheckpointer(BaseCheckpointSaver):
                 "metadata": metadata,
             }
             self._save_raw(data)
-            node = metadata.get("source", "unknown")
-            self._append_journal(thread_id, node, f"State saved. Step: {metadata.get('step', '?')}")
         return config
 
     def put_writes(

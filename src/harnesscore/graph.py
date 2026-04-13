@@ -14,6 +14,7 @@ from harnesscore.agents.sa import sa_node
 from harnesscore.agents.cd import cd_node
 from harnesscore.agents.qa import qa_node
 from harnesscore.agents.ui import ui_node
+from harnesscore.agents.dr import dr_node
 
 
 def dummy_node(agent_name: str):
@@ -66,14 +67,16 @@ def build_graph(config: HarnessConfig, checkpointer: Any = None):
     def wrapped_ui(state: SystemState):
         return ui_node(state, config)
 
+    def wrapped_dr(state: SystemState):
+        return dr_node(state, config)
+
     builder.add_node("PO", wrapped_po)
     builder.add_node("System Architect", wrapped_sa)
     builder.add_node("Core Developer", wrapped_cd)
     builder.add_node("QA Evaluator", wrapped_qa)
     builder.add_node("UI Engineer", wrapped_ui)
+    builder.add_node("Design Reviewer", wrapped_dr)
 
-    # Temporary stubs for remaining agents
-    builder.add_node("Design Reviewer", dummy_node("Design Reviewer"))
 
     # 3. Add Edges
     # The start always goes to PO
@@ -81,11 +84,15 @@ def build_graph(config: HarnessConfig, checkpointer: Any = None):
     
     # Conditional logic for routing outwards from PO
     def po_router(state: SystemState) -> str:
-        # Pydantic states in LangGraph can sometimes be passed as dicts or objects
-        # We handle both cases just to be safe
         next_agent = state.next_agent if hasattr(state, 'next_agent') else state.get("next_agent")
         
         if next_agent == "FINISH" or not next_agent:
+            return END
+        if next_agent == "HUMAN":
+            # For HUMAN, we return END but the PO will have set ActionType to MESSAGE
+            # actually we can just return END and let the REPL handle it, 
+            # or we could have a specific HUMAN node. 
+            # In LangGraph, returning END is standard for 'waiting for new input' in a REPL.
             return END
         return next_agent
 
@@ -98,6 +105,7 @@ def build_graph(config: HarnessConfig, checkpointer: Any = None):
             "Core Developer": "Core Developer",
             "UI Engineer": "UI Engineer",
             "QA Evaluator": "QA Evaluator",
+            "HUMAN": END, # HUMAN routing ends the current run to wait for input
             END: END
         }
     )
@@ -109,4 +117,10 @@ def build_graph(config: HarnessConfig, checkpointer: Any = None):
     builder.add_edge("UI Engineer", "PO")
     builder.add_edge("QA Evaluator", "PO")
     
-    return builder.compile(checkpointer=checkpointer)
+    # Compile with interrupts to allow HITL (Plan review, etc.)
+    return builder.compile(
+        checkpointer=checkpointer,
+        interrupt_before=["Design Reviewer", "Core Developer", "UI Engineer"]
+    )
+
+

@@ -14,14 +14,18 @@
 
 ---
 
-## 🔲 진행 예정
+## 🔲 진행 예정 (Phase 4.5~5: Interactive REPL)
 
-### IR-004: LangGraph 그래프 및 PO Supervisor Node
-- `StateGraph` 정의 (`SystemState` 기반)
-- PO 노드: 요구사항 분석 → Task 분할 → `next_agent` 라우팅 결정
-- Conditional Edge: `next_agent` 값에 따라 하위 에이전트 노드로 분기
-- `FileCheckpointer` 연동하여 `.harness/state.json` + `journals.md` 기록
-- **HITL 인터럽트 포인트**: PO가 `HITL` 신호 반환 시 사용자 입력 대기
+### IR-004-B: 대화형 인터페이스 (Interactive REPL) 
+- [ ] 사용자 명령을 지속적으로 입력받고 에이전트와 대화할 수 있는 전용 루프 구현
+- [ ] 이전 대화 문맥(History) 유지 및 LLM 주입 로직
+- [ ] `/reset`, `/undo`, `/config`, `/help` 등의 기본 내장 명령어 처리
+- [ ] `.env` 파일 자동 로드 기능 수정
+
+---
+
+## 🔲 진행 예정 (Phase 4: Agent Specialist)
+
 
 ### IR-005: System Architect 에이전트
 - 설계 문서(Pydantic 스키마, API 규격) 작성 도구(`Write_Architecture_Doc`) 구현
@@ -55,7 +59,6 @@
 
 ---
 
-## 🔲 보류 (후속 Phase)
 
 ### IR-011: TUI 클라이언트 (Phase 4)
 - Textual 기반 화면 레이아웃 (에이전트 상태 패널, 채팅 입력, Diff 뷰어)
@@ -71,5 +74,6 @@
 - 프로젝트별 코딩 컨벤션, 자주 쓰는 패턴 템플릿 적용
 
 ### IR-WEB: Web 대시보드 (Phase 6)
-- React 기반 대시보드 (노드 그래프, 실시간 diff 뷰어, HITL 승인 버튼)
-- FastAPI Static 파일 서빙으로 별도 서버 없이 `harness web` 단일 커맨드 실행
+- [ ] React 기반 대시보드 (노드 그래프, 실시간 diff 뷰어, HITL 승인 버튼)
+- [ ] FastAPI Static 파일 서빙으로 별도 서버 없이 `harness web` 단일 커맨드 실행
+

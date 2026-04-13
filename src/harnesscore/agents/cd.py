@@ -1,29 +1,21 @@
 """
 Core Developer agent node.
-
-Responsibilities:
-- Read the architecture notes produced by the System Architect.
-- Generate actual implementation code for the assigned tasks.
-- Write files to the project using FileIOTool (Path Guard enforced).
-- Run pytest and capture results.
-- Stage & commit changes via GitTool.
-- Mark tasks as completed and surface any errors back to PO.
 """
-from __future__ import annotations
-
 import json
-import subprocess
 from pathlib import Path
-from typing import Optional
+from typing import Optional, List, Any
 
 from langchain_core.messages import HumanMessage, SystemMessage
 from pydantic import BaseModel, Field
 
 from harnesscore.schema import SystemState, TaskLog
 from harnesscore.config.loader import HarnessConfig
-from harnesscore.llm import get_llm
+from harnesscore.llm import get_llm, extract_token_usage
 from harnesscore.tools.file_io import FileIOTool
 from harnesscore.tools.git_tool import GitTool
+from harnesscore.tools.shell import ShellTool
+from harnesscore.utils.journaler import Journaler
+from harnesscore.utils.prompt_manager import PromptManager
 
 
 CD_SYSTEM_PROMPT = """\
@@ -52,12 +44,18 @@ class FileContent(BaseModel):
 
 
 class CDDecision(BaseModel):
-    reasoning: str = Field(description="Brief explanation of the implementation decisions made.")
-    files: list[FileContent] = Field(description="List of files to write, each with its full content.")
-    resolved_task_ids: list[str] = Field(
+    reasoning: str = Field(description="Internal technical reasoning for the implementation.")
+    response_to_user: str = Field(
+        description="A direct, helpful message to the user explaining what you have implemented and any tests run."
+    )
+    files: List[FileContent] = Field(description="List of files to write, each with its full content.")
+    resolved_task_ids: List[str] = Field(
         description="IDs of tasks from the task list that this implementation has resolved."
     )
     commit_message: str = Field(description="A concise git commit message for these changes.")
+
+FileContent.model_rebuild()
+CDDecision.model_rebuild()
 
 
 def _read_arch_notes(harness_dir: Path) -> str:
@@ -68,23 +66,6 @@ def _read_arch_notes(harness_dir: Path) -> str:
     return "No architecture notes available."
 
 
-def _run_pytest(project_root: Path, timeout: int = 60) -> tuple[bool, str]:
-    """
-    Run pytest from project_root.
-    Returns (passed: bool, output: str).
-    """
-    result = subprocess.run(
-        ["python", "-m", "pytest", "--tb=short", "-q"],
-        cwd=project_root,
-        capture_output=True,
-        text=True,
-        timeout=timeout,
-    )
-    output = result.stdout + result.stderr
-    passed = result.returncode == 0
-    return passed, output
-
-
 def cd_node(state: SystemState, config: HarnessConfig) -> dict:
     """LangGraph node execution for the Core Developer."""
     print("[Core Developer] Starting implementation...")
@@ -92,10 +73,7 @@ def cd_node(state: SystemState, config: HarnessConfig) -> dict:
     project_root = Path(config.project_root or ".").resolve()
     harness_dir = project_root / ".harness"
     file_tool = FileIOTool(project_root)
-
-    # Determine the allowed root directory for file writes (Path Guard)
-    agent_root = config.agent_paths.get("Core Developer")
-    write_root = project_root / agent_root if agent_root else project_root
+    shell_tool = ShellTool(project_root)
 
     # --- 1. Gather context ------------------------------------------------
     arch_notes = _read_arch_notes(harness_dir)
@@ -107,7 +85,7 @@ def cd_node(state: SystemState, config: HarnessConfig) -> dict:
 
     # --- 2. Call LLM -------------------------------------------------------
     llm = get_llm(config, "Core Developer")
-    structured_llm = llm.with_structured_output(CDDecision)
+    structured_llm = llm.with_structured_output(CDDecision, include_raw=True)
 
     context_text = (
         f"User Prompt: {state.user_prompt}\n"
@@ -116,9 +94,20 @@ def cd_node(state: SystemState, config: HarnessConfig) -> dict:
         f"\n--- Architecture Notes ---\n{arch_notes}\n"
     )
 
-    decision: CDDecision = structured_llm.invoke(
-        [SystemMessage(content=CD_SYSTEM_PROMPT), HumanMessage(content=context_text)]
+    print("[Core Developer] Calling LLM for implementation code...")
+    
+    # Load custom instructions
+    custom_instr = PromptManager.load_custom_instructions(harness_dir, "Core Developer")
+    
+    raw_result = structured_llm.invoke(
+        [SystemMessage(content=CD_SYSTEM_PROMPT + custom_instr), HumanMessage(content=context_text)]
     )
+    
+    decision: CDDecision = raw_result["parsed"]
+    raw_resp = raw_result["raw"]
+    
+    # Extract token usage
+    tokens = extract_token_usage(raw_resp)
 
     print(f"[Core Developer] Writing {len(decision.files)} file(s)...")
 
@@ -131,16 +120,14 @@ def cd_node(state: SystemState, config: HarnessConfig) -> dict:
         try:
             file_tool.write_file(rel, fc.content)
             written_paths.append(rel)
-            print(f"[Core Developer] ✓ Written: {rel}")
         except Exception as exc:
             errors.append(f"Failed to write '{rel}': {exc}")
-            print(f"[Core Developer] ✗ Error writing '{rel}': {exc}")
 
-    # --- 4. Run tests ------------------------------------------------------
-    test_passed, test_output = _run_pytest(project_root)
+    # --- 4. Run tests using ShellTool --------------------------------------
+    print("[Core Developer] Running tests via ShellTool...")
+    test_output = shell_tool.run_command("python -m pytest --tb=short -q")
+    test_passed = "Failed" not in test_output and "Error" not in test_output
     print(f"[Core Developer] Tests: {'PASSED' if test_passed else 'FAILED'}")
-    if not test_passed:
-        print(f"[Core Developer] Test output:\n{test_output[:500]}")
 
     # --- 5. Git commit (only on test pass) ---------------------------------
     commit_hash: Optional[str] = None
@@ -150,9 +137,8 @@ def cd_node(state: SystemState, config: HarnessConfig) -> dict:
             git.add(".")
             git.commit(decision.commit_message)
             commit_hash = git.log(n=1).split()[0]
-            print(f"[Core Developer] Committed: {commit_hash}")
         except Exception as exc:
-            print(f"[Core Developer] Git commit skipped: {exc}")
+            errors.append(f"Git commit failed: {exc}")
 
     # --- 6. Build return payload ------------------------------------------
     latest_error: Optional[str] = None
@@ -174,12 +160,36 @@ def cd_node(state: SystemState, config: HarnessConfig) -> dict:
     log = TaskLog(
         agent_name="Core Developer",
         action_type="IMPLEMENTATION",
-        details=(
-            f"Written: {written_paths}. "
-            f"Tests: {'passed' if test_passed else 'failed'}. "
-            f"Commit: {commit_hash or 'none'}."
+        input_context=context_text,
+        details=decision.response_to_user,
+        logs=(
+            f"Reasoning: {decision.reasoning}\n"
+            f"Written: {written_paths}\n"
+            f"Test Output:\n{test_output}\n"
+            f"Commit: {commit_hash or 'none'}"
         ),
         status=status,
+        tokens=tokens
+    )
+
+    # Write implementation notes (Generator Scratchpad)
+    try:
+        dev_notes_path = config.harness_dir / "dev_notes.md"
+        dev_notes_path.write_text(
+            f"# Core Developer Implementation Notes\n\n"
+            f"**Last Action**: {decision.response_to_user}\n\n"
+            f"**Technical Reasoning**:\n{decision.reasoning}\n",
+            encoding="utf-8"
+        )
+    except:
+        pass
+
+    # Explicit Journaling
+    Journaler.log_activity(
+        harness_dir=config.harness_dir,
+        thread_id=getattr(state, "thread_id", "unknown"),
+        log_data=log.model_dump(),
+        language=config.language
     )
 
     return {

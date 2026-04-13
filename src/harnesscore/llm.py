@@ -3,12 +3,13 @@ LLM Factory for instantiating models based on HarnessConfig.
 """
 from __future__ import annotations
 
-from typing import Annotated, Any
+from typing import Any
 
 from langchain_core.language_models import BaseChatModel
 from langchain_google_genai import ChatGoogleGenerativeAI
 
 from harnesscore.config.loader import HarnessConfig
+from harnesscore.schema import TokenUsage
 
 
 def get_llm(config: HarnessConfig, agent_name: str, **kwargs: Any) -> BaseChatModel:
@@ -36,3 +37,28 @@ def get_llm(config: HarnessConfig, agent_name: str, **kwargs: Any) -> BaseChatMo
         raise NotImplementedError("OpenAI provider requires installing `langchain-openai`.")
     else:
         raise NotImplementedError(f"Provider {config.llm.provider} is not yet supported.")
+
+
+def extract_token_usage(response: Any) -> TokenUsage:
+    """
+    Extract token usage data from a LangChain LLM response.
+    Supports both BaseMessage (raw) and structured output wrappers.
+    """
+    usage = TokenUsage()
+    
+    # Handle raw response metadata (LangChain usage_metadata)
+    metadata = getattr(response, "usage_metadata", {})
+    
+    # Fallback for some older versions or different providers
+    if not metadata and hasattr(response, "response_metadata"):
+        metadata = response.response_metadata.get("token_usage", {})
+    
+    if metadata:
+        usage.input_tokens = metadata.get("input_tokens") or metadata.get("prompt_tokens") or 0
+        usage.output_tokens = metadata.get("output_tokens") or metadata.get("completion_tokens") or 0
+        
+        # Thinking/Reasoning tokens (Gemini specific or others)
+        # Note: 'thinking_tokens' is a common field for Gemini reasoning models.
+        usage.thinking_tokens = metadata.get("thinking_tokens") or 0
+        
+    return usage

@@ -1,27 +1,20 @@
 """
 UI Engineer agent node.
-
-Responsibilities:
-- Read architecture notes to understand UI/Frontend requirements.
-- Generate HTML, CSS, and Client-side JavaScript.
-- Handle styling, layout, and user interaction logic.
-- Write files via FileIOTool and commit via GitTool.
-- Mark tasks as completed and hand control back to PO.
 """
-from __future__ import annotations
-
 import json
 from pathlib import Path
-from typing import Optional
+from typing import Optional, List, Any
 
 from langchain_core.messages import HumanMessage, SystemMessage
 from pydantic import BaseModel, Field
 
 from harnesscore.schema import SystemState, TaskLog
 from harnesscore.config.loader import HarnessConfig
-from harnesscore.llm import get_llm
+from harnesscore.llm import get_llm, extract_token_usage
 from harnesscore.tools.file_io import FileIOTool
 from harnesscore.tools.git_tool import GitTool
+from harnesscore.utils.journaler import Journaler
+from harnesscore.utils.prompt_manager import PromptManager
 
 
 UI_SYSTEM_PROMPT = """\
@@ -49,10 +42,16 @@ class FileContent(BaseModel):
 
 
 class UIDecision(BaseModel):
-    reasoning: str = Field(description="Reasoning for the UI implementation.")
-    files: list[FileContent] = Field(description="List of UI files to create or modify.")
-    resolved_task_ids: list[str] = Field(description="IDs of tasks resolved by this action.")
+    reasoning: str = Field(description="Internal technical reasoning for the UI implementation.")
+    response_to_user: str = Field(
+        description="A direct message to the user explaining the UI changes and design choices."
+    )
+    files: List[FileContent] = Field(description="List of UI files to create or modify.")
+    resolved_task_ids: List[str] = Field(description="IDs of tasks resolved by this action.")
     commit_message: str = Field(description="Git commit message.")
+
+FileContent.model_rebuild()
+UIDecision.model_rebuild()
 
 
 def _read_arch_notes(harness_dir: Path) -> str:
@@ -81,7 +80,7 @@ def ui_node(state: SystemState, config: HarnessConfig) -> dict:
 
     # --- 2. Call LLM -------------------------------------------------------
     llm = get_llm(config, "UI Engineer")
-    structured_llm = llm.with_structured_output(UIDecision)
+    structured_llm = llm.with_structured_output(UIDecision, include_raw=True)
 
     context_text = (
         f"User Prompt: {state.user_prompt}\n"
@@ -90,9 +89,20 @@ def ui_node(state: SystemState, config: HarnessConfig) -> dict:
         f"\n--- Architecture Notes ---\n{arch_notes}\n"
     )
 
-    decision: UIDecision = structured_llm.invoke(
-        [SystemMessage(content=UI_SYSTEM_PROMPT), HumanMessage(content=context_text)]
+    print("[UI Engineer] Calling LLM for UI components...")
+    
+    # Load custom instructions
+    custom_instr = PromptManager.load_custom_instructions(harness_dir, "UI Engineer")
+    
+    raw_result = structured_llm.invoke(
+        [SystemMessage(content=UI_SYSTEM_PROMPT + custom_instr), HumanMessage(content=context_text)]
     )
+    
+    decision: UIDecision = raw_result["parsed"]
+    raw_resp = raw_result["raw"]
+    
+    # Extract token usage
+    tokens = extract_token_usage(raw_resp)
 
     print(f"[UI Engineer] Writing {len(decision.files)} UI file(s)...")
 
@@ -105,10 +115,8 @@ def ui_node(state: SystemState, config: HarnessConfig) -> dict:
         try:
             file_tool.write_file(rel, fc.content)
             written_paths.append(rel)
-            print(f"[UI Engineer] ✓ Written: {rel}")
         except Exception as exc:
             errors.append(f"Failed to write '{rel}': {exc}")
-            print(f"[UI Engineer] ✗ Error writing '{rel}': {exc}")
 
     # --- 4. Git commit (on success) ----------------------------------------
     commit_hash: Optional[str] = None
@@ -118,9 +126,8 @@ def ui_node(state: SystemState, config: HarnessConfig) -> dict:
             git.add(".")
             git.commit(decision.commit_message)
             commit_hash = git.log(n=1).split()[0]
-            print(f"[UI Engineer] Committed UI changes: {commit_hash}")
         except Exception as exc:
-            print(f"[UI Engineer] Git commit skipped: {exc}")
+            errors.append(f"Git commit failed: {exc}")
 
     # --- 5. Build return payload ------------------------------------------
     status = "SUCCESS" if not errors else "FAIL"
@@ -135,11 +142,23 @@ def ui_node(state: SystemState, config: HarnessConfig) -> dict:
     log = TaskLog(
         agent_name="UI Engineer",
         action_type="UI_IMPLEMENTATION",
-        details=(
-            f"Written UI files: {written_paths}. "
-            f"Commit: {commit_hash or 'none'}."
+        input_context=context_text,
+        details=decision.response_to_user,
+        logs=(
+            f"Reasoning: {decision.reasoning}\n"
+            f"Files: {written_paths}\n"
+            f"Commit: {commit_hash or 'none'}"
         ),
         status=status,
+        tokens=tokens
+    )
+
+    # Explicit Journaling
+    Journaler.log_activity(
+        harness_dir=config.harness_dir,
+        thread_id=getattr(state, "thread_id", "unknown"),
+        log_data=log.model_dump(),
+        language=config.language
     )
 
     return {
