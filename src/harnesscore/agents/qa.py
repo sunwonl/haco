@@ -50,89 +50,92 @@ class QADecision(BaseModel):
 QADecision.model_rebuild()
 
 
+from harnesscore.agents.base import run_agent_react_loop
+from harnesscore.tools.journal import JournalTool
+
 def qa_node(state: SystemState, config: HarnessConfig) -> dict:
     """LangGraph node execution for the QA Evaluator."""
-    print("[QA Evaluator] Performing deep verification...")
-
     project_root = Path(config.project_root or ".")
-    file_tool = FileIOTool(project_root)
-    net_tool = NetworkTool()
-    shell_tool = ShellTool(project_root)
-    proc_tool = ProcessControlTool(project_root)
-
-    # --- 1. Automatic Diagnostics ------------------------------------------
-    # Check if there are any running servers from ProcessControl
-    running_procs = proc_tool.status()
-    proc_summary = "\n".join([f"- {p['label']}: {p['status']} (PID {p['pid']})" for p in running_procs]) or "No background processes."
-
-    # Perform a quick health check if it's a web project (looking for local ports)
-    # This is a bit heuristic, but useful for QA
-    health_results = []
-    if any("fastapi" in str(state.file_changes).lower() for p in state.file_changes):
-        # Heuristic: try localhost:8000 for FastAPI
-        health_results.append(net_tool.ping("http://localhost:8000/health"))
-
-    # Read the modified files
-    file_contents = {}
-    for path in state.file_changes:
-        try:
-            content = file_tool.view_file(path)
-            file_contents[path] = content
-        except:
-            pass
-
-    # --- 2. Call LLM -------------------------------------------------------
+    harness_dir = project_root / ".harness"
     llm = get_llm(config, "QA Evaluator")
-    structured_llm = llm.with_structured_output(QADecision)
 
-    context_text = (
+    sys_prompt = QA_SYSTEM_PROMPT + PromptManager.load_custom_instructions(harness_dir, "QA Evaluator")
+
+    # Define dynamic tools for QA
+    def system_status() -> str:
+        """Get the current running background processes (e.g., servers)."""
+        proc_tool = ProcessControlTool(project_root)
+        running_procs = proc_tool.status()
+        return "\n".join([f"- {p['label']}: {p['status']} (PID {p['pid']})" for p in running_procs]) or "No background processes."
+
+    def network_ping(url: str) -> str:
+        """Ping a URL (e.g. http://localhost:8000/health) to check if server is responding."""
+        net_tool = NetworkTool()
+        return net_tool.ping(url)
+        
+    def read_file(path: str) -> str:
+        """Read content of a specific file."""
+        file_tool = FileIOTool(project_root)
+        try:
+            return file_tool.view_file(path)
+        except Exception as e:
+            return f"Error: {e}"
+
+    def run_tests(command: str) -> str:
+        """Run a test command synchronously (e.g. 'pytest')."""
+        shell_tool = ShellTool(project_root)
+        return shell_tool.run_command(command)
+
+    def read_journal(target_role: str = "PO", limit: int = 5) -> str:
+        """Read what other agents discussed."""
+        jtool = JournalTool(harness_dir)
+        return jtool.read_journal(limit=limit, role_filter=target_role)
+
+    def submit_work(status: Literal["APPROVED", "REJECTED"], message: str, next_agent: str = "PO", completed_task_id: str = None) -> str:
+        """
+        Submit your QA evaluation result.
+        Args:
+            status: "APPROVED" if requirements are fully met without errors, else "REJECTED".
+            message: Explanation or feedback.
+            next_agent: Always route back to "PO".
+            completed_task_id: The ID of the task you evaluated, if any.
+        """
+        return "WORK_SUBMITTED"
+
+    def run_shell_command(command: str) -> str:
+        """Run robust linux shell commands (e.g., cat, grep, ls, python) to inspect the codebase or execute scripts."""
+        shell_tool = ShellTool(project_root)
+        return shell_tool.run_command(command)
+
+    tools = [system_status, network_ping, read_file, run_tests, read_journal, submit_work, run_shell_command]
+
+    context_str = (
         f"User Prompt: {state.user_prompt}\n"
-        f"Modified Files: {state.file_changes}\n"
-        f"Latest Error: {state.latest_error or 'None'}\n"
-        f"Background Processes:\n{proc_summary}\n"
-        f"Automatic Health Checks:\n" + ("\n".join(health_results) if health_results else "None run.") + "\n"
-        f"\n--- File Contents ---\n"
-        f"{json.dumps(file_contents, indent=2, ensure_ascii=False)}\n"
+        f"Tasks Queue: {json.dumps(state.tasks, ensure_ascii=False)}\n"
+        f"Modified Files to evaluate: {state.file_changes}\n"
+        f"Latest Error Context: {state.latest_error or 'None'}\n"
     )
 
-    print("[QA Evaluator] Calling LLM for final verdict...")
-    
-    # Load custom instructions
-    harness_dir = project_root / ".harness"
-    custom_instr = PromptManager.load_custom_instructions(harness_dir, "QA Evaluator")
-    
-    decision: QADecision = structured_llm.invoke(
-        [SystemMessage(content=QA_SYSTEM_PROMPT + custom_instr), HumanMessage(content=context_text)]
-    )
-    
-    print(f"[QA Evaluator] Verdict: {decision.status}")
-
-    # --- 3. Build return payload ------------------------------------------
-    log = TaskLog(
+    result = run_agent_react_loop(
         agent_name="QA Evaluator",
-        action_type="VERIFICATION",
-        details=decision.response_to_user,
-        logs=(
-            f"Status: {decision.status}\n"
-            f"Feedback: {decision.feedback}\n"
-            f"Reasoning: {decision.reasoning}\n"
-            f"Procs: {proc_summary}\n"
-            f"Health: {health_results}"
-        ),
-        status="SUCCESS" if decision.status == "APPROVED" else "FAIL"
-    )
-
-    harness_dir = project_root / ".harness"
-    Journaler.log_activity(
+        state=state,
+        llm=llm,
+        tools=tools,
+        sys_prompt=sys_prompt,
+        context_str=context_str,
         harness_dir=harness_dir,
-        thread_id=getattr(state, "thread_id", "unknown"),
-        log_data=log.model_dump(),
-        language=config.language
+        max_loops=10
     )
+    
+    # QA handles 'latest_error' uniquely inside result state
+    # We need to extract the status from the tool calls, but since it's hard to parse post-loop robustly without looking into JournalEntry,
+    # let's just use the message content if we rejected.
+    # A quick heuristic: if the message starts with or contains 'REJECT', set latest_error
+    last_msg = ""
+    for j in result["journal"]:
+        if j.category == "Message":
+            last_msg = j.content.upper()
+    if "REJECT" in last_msg or "FAIL" in last_msg:
+        result["latest_error"] = last_msg
 
-    return {
-        "current_assignee": "QA Evaluator",
-        "next_agent": "PO",
-        "latest_error": decision.feedback if decision.status == "REJECTED" else None,
-        "history_logs": [log],
-    }
+    return result

@@ -1,0 +1,371 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>SYNTHETIC IDE - Multi-Agent Workspace</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&amp;family=JetBrains+Mono:wght@400;500&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+    tailwind.config = {
+      darkMode: "class",
+      theme: {
+        extend: {
+          "colors": {
+            "on-tertiary-fixed": "#07006c",
+            "on-tertiary-container": "#1407ad",
+            "error": "#ffb4ab",
+            "outline": "#88929b",
+            "secondary-fixed": "#6ffbbe",
+            "primary": "#89ceff",
+            "background": "#10131a",
+            "surface-container-low": "#191c22",
+            "on-tertiary-fixed-variant": "#2f2ebe",
+            "tertiary-fixed": "#e1e0ff",
+            "surface-dim": "#10131a",
+            "surface-bright": "#363940",
+            "tertiary-container": "#8d90ff",
+            "primary-container": "#0ea5e9",
+            "surface-container-highest": "#32353c",
+            "on-secondary-container": "#00311f",
+            "surface-tint": "#89ceff",
+            "surface-container-lowest": "#0b0e14",
+            "primary-fixed-dim": "#89ceff",
+            "on-secondary-fixed": "#002113",
+            "surface-container": "#1d2026",
+            "outline-variant": "#3e4850",
+            "secondary-container": "#00a572",
+            "on-error": "#690005",
+            "tertiary-fixed-dim": "#c0c1ff",
+            "tertiary": "#c0c1ff",
+            "on-tertiary": "#1000a9",
+            "primary-fixed": "#c9e6ff",
+            "on-primary-container": "#003751",
+            "on-surface": "#e1e2eb",
+            "on-primary-fixed": "#001e2f",
+            "inverse-primary": "#006591",
+            "surface-container-high": "#272a31",
+            "on-background": "#e1e2eb",
+            "inverse-on-surface": "#2e3037",
+            "secondary-fixed-dim": "#4edea3",
+            "on-secondary-fixed-variant": "#005236",
+            "surface": "#10131a",
+            "on-surface-variant": "#bec8d2",
+            "on-secondary": "#003824",
+            "on-primary-fixed-variant": "#004c6e",
+            "secondary": "#4edea3",
+            "on-error-container": "#ffdad6",
+            "on-primary": "#00344d",
+            "inverse-surface": "#e1e2eb",
+            "error-container": "#93000a"
+          },
+          "borderRadius": {
+            "DEFAULT": "0.125rem",
+            "lg": "0.25rem",
+            "xl": "0.5rem",
+            "full": "0.75rem"
+          },
+          "fontFamily": {
+            "headline": ["Inter"],
+            "body": ["Inter"],
+            "label": ["Inter"],
+            "mono": ["JetBrains Mono"]
+          }
+        },
+      },
+    }
+  </script>
+<style>
+    body { font-family: 'Inter', sans-serif; background-color: #10131a; color: #e1e2eb; overflow: hidden; }
+    .material-symbols-outlined { font-size: 20px; vertical-align: middle; }
+    .glass-effect { backdrop-filter: blur(40px); background: rgba(54, 57, 64, 0.8); }
+    .no-scrollbar::-webkit-scrollbar { display: none; }
+    .custom-gradient { background: linear-gradient(135deg, #89ceff 0%, #0ea5e9 100%); }
+    .syntax-keyword { color: #c0c1ff; }
+    .syntax-string { color: #4edea3; }
+    .syntax-comment { color: #88929b; }
+    .syntax-func { color: #89ceff; }
+  </style>
+</head>
+<body class="flex h-screen w-screen overflow-hidden">
+<!-- SideNavBar (Shared Component) -->
+<aside class="fixed left-0 top-0 h-full z-50 flex flex-col justify-between bg-[#191c22] w-16 py-4">
+<div class="flex flex-col items-center gap-6">
+<div class="w-10 h-10 bg-surface-container-highest rounded-lg flex items-center justify-center mb-4">
+<span class="material-symbols-outlined text-primary">terminal</span>
+</div>
+<!-- Nav Items -->
+<nav class="flex flex-col items-center w-full gap-2">
+<button class="w-full py-3 flex items-center justify-center text-[#89ceff] border-l-2 border-[#89ceff] bg-[#1d2026] transition-all duration-200">
+<span class="material-symbols-outlined">folder_open</span>
+</button>
+<button class="w-full py-3 flex items-center justify-center text-[#bec8d2] opacity-60 hover:opacity-100 hover:bg-[#1d2026] transition-all duration-200">
+<span class="material-symbols-outlined">search</span>
+</button>
+<button class="w-full py-3 flex items-center justify-center text-[#bec8d2] opacity-60 hover:opacity-100 hover:bg-[#1d2026] transition-all duration-200">
+<span class="material-symbols-outlined">account_tree</span>
+</button>
+<button class="w-full py-3 flex items-center justify-center text-[#bec8d2] opacity-60 hover:opacity-100 hover:bg-[#1d2026] transition-all duration-200">
+<span class="material-symbols-outlined">extension</span>
+</button>
+<button class="w-full py-3 flex items-center justify-center text-[#bec8d2] opacity-60 hover:opacity-100 hover:bg-[#1d2026] transition-all duration-200">
+<span class="material-symbols-outlined">bug_report</span>
+</button>
+</nav>
+</div>
+<div class="flex flex-col items-center w-full gap-2">
+<button class="w-full py-3 flex items-center justify-center text-[#bec8d2] opacity-60 hover:opacity-100 hover:bg-[#1d2026] transition-all duration-200">
+<span class="material-symbols-outlined">account_circle</span>
+</button>
+<button class="w-full py-3 flex items-center justify-center text-[#bec8d2] opacity-60 hover:opacity-100 hover:bg-[#1d2026] transition-all duration-200">
+<span class="material-symbols-outlined">settings</span>
+</button>
+</div>
+</aside>
+<main class="flex flex-col flex-1 ml-16 h-full">
+<!-- TopNavBar (Shared Component) -->
+<header class="w-full h-14 bg-[#191c22] flex justify-between items-center px-6 font-['Inter'] tracking-tight text-sm">
+<div class="flex items-center gap-8">
+<span class="text-lg font-black tracking-tighter text-[#e1e2eb]">SYNTHETIC_IDE</span>
+<nav class="flex items-center gap-6">
+<a class="text-[#bec8d2] hover:bg-[#32353c] px-3 py-1 rounded transition-colors" href="#">Models</a>
+<a class="text-[#bec8d2] hover:bg-[#32353c] px-3 py-1 rounded transition-colors" href="#">Runtime</a>
+<a class="text-[#bec8d2] hover:bg-[#32353c] px-3 py-1 rounded transition-colors" href="#">Compute</a>
+</nav>
+</div>
+<div class="flex items-center gap-6">
+<div class="flex items-center gap-2 px-3 py-1 bg-surface-container rounded-full">
+<span class="w-2 h-2 rounded-full bg-secondary"></span>
+<span class="text-on-surface-variant font-medium text-[10px] uppercase tracking-widest">Cluster: 0X-A42</span>
+</div>
+<div class="flex items-center gap-3">
+<span class="material-symbols-outlined text-[#bec8d2] hover:bg-[#32353c] p-1 rounded transition-colors cursor-pointer">settings</span>
+<span class="material-symbols-outlined text-[#bec8d2] hover:bg-[#32353c] p-1 rounded transition-colors cursor-pointer">terminal</span>
+<span class="material-symbols-outlined text-[#bec8d2] hover:bg-[#32353c] p-1 rounded transition-colors cursor-pointer">help</span>
+</div>
+<button class="px-4 py-1.5 custom-gradient text-on-primary font-bold rounded-md active:scale-95 duration-100">Deploy</button>
+</div>
+</header>
+<!-- IDE Body: Three-Column Layout -->
+<section class="flex flex-1 overflow-hidden">
+<!-- Left Column: File Explorer -->
+<div class="w-64 bg-surface-container-low flex flex-col">
+<div class="px-4 py-3 flex items-center justify-between">
+<span class="text-[11px] font-bold uppercase tracking-widest text-on-surface-variant">Project_Root</span>
+<span class="material-symbols-outlined text-outline text-sm">more_horiz</span>
+</div>
+<div class="flex-1 overflow-y-auto px-2 py-2">
+<!-- Directory src -->
+<div class="flex items-center gap-2 py-1 px-2 text-on-surface-variant hover:bg-surface-container rounded cursor-pointer transition-colors">
+<span class="material-symbols-outlined text-primary-container">keyboard_arrow_down</span>
+<span class="material-symbols-outlined">folder</span>
+<span class="text-sm">src</span>
+</div>
+<!-- Sub-directory components -->
+<div class="ml-4">
+<div class="flex items-center gap-2 py-1 px-2 text-on-surface-variant hover:bg-surface-container rounded cursor-pointer transition-colors">
+<span class="material-symbols-outlined text-outline">keyboard_arrow_right</span>
+<span class="material-symbols-outlined">folder</span>
+<span class="text-sm">components</span>
+</div>
+<!-- Files -->
+<div class="flex items-center gap-2 py-1 px-2 text-on-surface-variant hover:bg-surface-container rounded cursor-pointer transition-colors">
+<span class="material-symbols-outlined text-primary">description</span>
+<span class="text-sm">App.js</span>
+</div>
+<div class="flex items-center gap-2 py-1 px-2 bg-surface-container text-primary rounded cursor-pointer transition-colors">
+<span class="material-symbols-outlined" data-weight="fill">description</span>
+<span class="text-sm font-medium">stream-processor.js</span>
+</div>
+<div class="flex items-center gap-2 py-1 px-2 text-on-surface-variant hover:bg-surface-container rounded cursor-pointer transition-colors">
+<span class="material-symbols-outlined">description</span>
+<span class="text-sm">utils.js</span>
+</div>
+</div>
+<!-- Directory public -->
+<div class="flex items-center gap-2 py-1 px-2 text-on-surface-variant hover:bg-surface-container rounded cursor-pointer transition-colors">
+<span class="material-symbols-outlined text-outline">keyboard_arrow_right</span>
+<span class="material-symbols-outlined">folder</span>
+<span class="text-sm">public</span>
+</div>
+<div class="mt-4 px-2">
+<div class="text-[10px] text-outline uppercase tracking-tighter mb-2">Metadata</div>
+<div class="flex items-center gap-2 py-1 px-2 text-on-surface-variant text-[12px] font-mono opacity-60">
+<span class="material-symbols-outlined text-sm">commit</span>
+<span>main_branch</span>
+</div>
+</div>
+</div>
+</div>
+<!-- Middle Column: AI Chat Interface -->
+<div class="flex-[0.8] bg-surface-container flex flex-col relative">
+<!-- Active Agent Status Bar -->
+<div class="absolute top-0 left-0 right-0 h-12 bg-surface-container-high flex items-center px-4 justify-between z-10">
+<div class="flex items-center gap-4">
+<div class="flex -space-x-2">
+<div class="w-8 h-8 rounded-full bg-surface-container-highest flex items-center justify-center ring-2 ring-surface-container-high">
+<span class="material-symbols-outlined text-sm">architecture</span>
+</div>
+<div class="w-8 h-8 rounded-full bg-primary flex items-center justify-center ring-2 ring-surface-container-high z-10">
+<span class="material-symbols-outlined text-on-primary text-sm" data-weight="fill">code</span>
+</div>
+<div class="w-8 h-8 rounded-full bg-surface-container-highest flex items-center justify-center ring-2 ring-surface-container-high">
+<span class="material-symbols-outlined text-sm">policy</span>
+</div>
+</div>
+<div class="flex flex-col">
+<span class="text-[10px] font-bold text-primary uppercase tracking-widest">Coder (Active)</span>
+<span class="text-[11px] text-on-surface-variant">Coder is refactoring stream-processor.js...</span>
+</div>
+</div>
+<div class="flex items-center gap-2">
+<span class="w-2 h-2 bg-primary rounded-full animate-pulse"></span>
+<span class="text-[10px] text-on-surface-variant">THINKING</span>
+</div>
+</div>
+<!-- Chat History -->
+<div class="flex-1 overflow-y-auto pt-16 pb-6 px-6 space-y-6">
+<div class="flex gap-4">
+<div class="w-8 h-8 rounded bg-surface-container-highest flex-shrink-0 flex items-center justify-center">
+<span class="material-symbols-outlined text-on-surface-variant">account_circle</span>
+</div>
+<div class="flex flex-col gap-2 max-w-[85%]">
+<div class="text-[11px] font-bold text-outline uppercase tracking-wider">User</div>
+<p class="text-sm leading-relaxed text-on-surface">Can you optimize the handleBuffer function in <span class="text-primary font-mono bg-primary/10 px-1 rounded">stream-processor.js</span>? It's causing memory spikes under heavy load.</p>
+</div>
+</div>
+<div class="flex gap-4">
+<div class="w-8 h-8 rounded bg-primary flex-shrink-0 flex items-center justify-center">
+<span class="material-symbols-outlined text-on-primary" data-weight="fill">smart_toy</span>
+</div>
+<div class="flex flex-col gap-2 max-w-[90%]">
+<div class="text-[11px] font-bold text-primary uppercase tracking-wider">Coder</div>
+<div class="bg-surface-container-low p-4 rounded-xl border-l-2 border-primary">
+<p class="text-sm leading-relaxed text-on-surface mb-3">Analyzing <span class="font-mono italic">stream-processor.js</span>. I've detected a closure leak in the buffer pooling logic. I am refactoring the class to use a typed array for better garbage collection performance.</p>
+<div class="flex items-center gap-2">
+<span class="text-[11px] text-primary bg-primary/10 px-2 py-0.5 rounded-full font-bold">REFACTORING</span>
+<span class="text-[11px] text-secondary bg-secondary/10 px-2 py-0.5 rounded-full font-bold">LINT_PASSED</span>
+</div>
+</div>
+</div>
+</div>
+</div>
+<!-- Input Area -->
+<div class="p-4 bg-surface-container">
+<div class="relative group">
+<textarea class="w-full bg-surface-container-highest border border-outline-variant/20 rounded-xl p-4 pr-12 text-sm text-on-surface placeholder:text-outline focus:outline-none focus:border-primary/50 transition-all resize-none min-h-[100px]" placeholder="Ask the swarm to code, refactor or debug..."></textarea>
+<button class="absolute bottom-4 right-4 p-2 bg-primary text-on-primary rounded-lg shadow-lg shadow-primary/20 hover:scale-105 transition-transform">
+<span class="material-symbols-outlined">send</span>
+</button>
+</div>
+<div class="mt-2 flex items-center gap-4 px-2">
+<button class="text-[10px] text-outline hover:text-primary transition-colors flex items-center gap-1">
+<span class="material-symbols-outlined text-sm">attach_file</span> Attach context
+            </button>
+<button class="text-[10px] text-outline hover:text-primary transition-colors flex items-center gap-1">
+<span class="material-symbols-outlined text-sm">history</span> Session history
+            </button>
+</div>
+</div>
+</div>
+<!-- Right Column: Code Editor -->
+<div class="flex-1 bg-surface-container-lowest flex flex-col">
+<!-- Editor Tabs -->
+<div class="h-10 bg-surface-container-low flex items-center px-4 gap-4">
+<div class="h-full border-t-2 border-primary bg-surface-container-lowest px-4 flex items-center gap-2">
+<span class="material-symbols-outlined text-primary text-sm">javascript</span>
+<span class="text-xs font-medium">stream-processor.js</span>
+<span class="material-symbols-outlined text-[14px] text-outline hover:text-on-surface cursor-pointer">close</span>
+</div>
+<div class="h-full px-4 flex items-center gap-2 text-on-surface-variant opacity-60 hover:opacity-100 transition-opacity cursor-pointer">
+<span class="material-symbols-outlined text-sm">javascript</span>
+<span class="text-xs">App.js</span>
+</div>
+<div class="ml-auto flex items-center gap-3">
+<span class="px-2 py-0.5 bg-secondary/10 text-secondary text-[10px] font-bold rounded border border-secondary/20">EDIT MODE</span>
+<span class="material-symbols-outlined text-outline hover:text-on-surface cursor-pointer">more_vert</span>
+</div>
+</div>
+<!-- Code Content -->
+<div class="flex-1 overflow-y-auto font-mono text-[13px] leading-6 flex">
+<!-- Line Numbers -->
+<div class="w-12 bg-surface-container-low/30 text-right pr-3 py-4 select-none border-r border-outline-variant/10">
+<div class="text-outline/40">1</div>
+<div class="text-outline/40">2</div>
+<div class="text-outline/40">3</div>
+<div class="text-outline/40">4</div>
+<div class="text-outline/40">5</div>
+<div class="text-outline/40">6</div>
+<div class="text-outline/40">7</div>
+<div class="text-outline/40">8</div>
+<div class="text-outline">9</div>
+<div class="text-primary font-bold">10</div>
+<div class="text-outline">11</div>
+<div class="text-outline/40">12</div>
+<div class="text-outline/40">13</div>
+<div class="text-outline/40">14</div>
+</div>
+<!-- Code Text -->
+<div class="p-4 flex-1">
+<div class="whitespace-pre"><span class="syntax-keyword">import</span> { <span class="syntax-func">BufferQueue</span> } <span class="syntax-keyword">from</span> <span class="syntax-string">'@core/transport'</span>;</div>
+<div class="whitespace-pre"></div>
+<div class="whitespace-pre"><span class="syntax-keyword">export class</span> <span class="syntax-func">StreamProcessor</span> {</div>
+<div class="whitespace-pre"> <span class="syntax-func">constructor</span>(config) {</div>
+<div class="whitespace-pre"> <span class="syntax-keyword">this</span>.buffer = <span class="syntax-keyword">new</span> <span class="syntax-func">Uint8Array</span>(config.maxSize);</div>
+<div class="whitespace-pre"> <span class="syntax-keyword">this</span>.pointer = <span class="syntax-num">0</span>;</div>
+<div class="whitespace-pre">  }</div>
+<div class="whitespace-pre"></div>
+<div class="whitespace-pre"> <span class="syntax-comment">// Optimization: Re-using buffer allocation</span></div>
+<div class="bg-primary/5 border-l-2 border-primary -ml-4 pl-4 py-1">
+<span class="syntax-func">handleBuffer</span>(data) {
+                <span class="syntax-keyword">if</span> (data.length + <span class="syntax-keyword">this</span>.pointer &gt; <span class="syntax-keyword">this</span>.buffer.length) {
+                  <span class="syntax-keyword">this</span>.<span class="syntax-func">flush</span>();
+                }
+                <span class="syntax-keyword">this</span>.buffer.<span class="syntax-func">set</span>(data, <span class="syntax-keyword">this</span>.pointer);
+                <span class="syntax-keyword">this</span>.pointer += data.length;
+              }
+            </div>
+<div class="whitespace-pre"></div>
+<div class="whitespace-pre"> <span class="syntax-func">flush</span>() {</div>
+<div class="whitespace-pre"> <span class="syntax-keyword">process</span>.<span class="syntax-func">stdout</span>.<span class="syntax-func">write</span>(<span class="syntax-keyword">this</span>.buffer.<span class="syntax-func">subarray</span>(<span class="syntax-num">0</span>, <span class="syntax-keyword">this</span>.pointer));</div>
+<div class="whitespace-pre"> <span class="syntax-keyword">this</span>.pointer = <span class="syntax-num">0</span>;</div>
+<div class="whitespace-pre">  }</div>
+<div class="whitespace-pre">}</div>
+</div>
+</div>
+<!-- Editor Footer -->
+<div class="h-6 bg-surface-container-low flex items-center px-4 justify-between">
+<div class="flex items-center gap-4 text-[10px] text-outline">
+<div class="flex items-center gap-1"><span class="material-symbols-outlined text-[12px]">code_blocks</span> UTF-8</div>
+<div class="flex items-center gap-1"><span class="material-symbols-outlined text-[12px]">keyboard</span> JavaScript</div>
+</div>
+<div class="text-[10px] text-outline font-medium">Ln 10, Col 15</div>
+</div>
+</div>
+</section>
+<!-- System Status Bar -->
+<footer class="h-6 bg-[#10131a] flex items-center px-4 justify-between border-t border-outline-variant/10">
+<div class="flex items-center gap-4">
+<div class="flex items-center gap-1.5">
+<span class="w-2 h-2 rounded-full bg-secondary"></span>
+<span class="text-[10px] text-on-surface-variant font-bold">SYSTEM_READY</span>
+</div>
+<div class="text-[10px] text-outline">Latency: <span class="text-on-surface">24ms</span></div>
+<div class="text-[10px] text-outline">Memory: <span class="text-on-surface">1.2GB / 8GB</span></div>
+</div>
+<div class="flex items-center gap-3">
+<span class="text-[10px] text-outline">AI_Swarm: <span class="text-primary">3_ACTIVE</span></span>
+<span class="material-symbols-outlined text-[14px] text-outline">notifications</span>
+</div>
+</footer>
+</main>
+<!-- Floating Action Button (Only on Home/Dashboard screens - allowed here for quick action in workspace) -->
+<button class="fixed bottom-10 right-10 w-14 h-14 rounded-full custom-gradient shadow-2xl shadow-primary/40 flex items-center justify-center text-on-primary group hover:scale-110 transition-transform z-[100]">
+<span class="material-symbols-outlined text-3xl" data-weight="fill">bolt</span>
+<div class="absolute right-16 px-4 py-2 bg-surface-container-highest text-on-surface text-sm rounded-lg opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none shadow-xl border border-outline-variant/20">
+      Trigger Deployment Pipeline
+    </div>
+</button>
+</body></html>

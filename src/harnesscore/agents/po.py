@@ -17,7 +17,14 @@ from harnesscore.utils.prompt_manager import PromptManager
 
 PO_SYSTEM_PROMPT = """\
 You are the **Product Owner (PO)** and Orchestrator of HarnessCore AI.
-Your role is to act as a Supervisor for a team of autonomous software engineering agents.
+
+### Team Roles & Documentation Ownership:
+- **Product Owner (PO)**: Orchestration and **User-Facing Documentation** (`README.md`, `ROADMAP.md`).
+- **System Architect (SA)**: Technical Blueprint (`arch_notes.md`, `SYSTEM_ARCHITECTURE.md`).
+- **Design Reviewer (DR)**: Logic/Spec Validator and Gatekeeper.
+- **Core Developer (CD)**: Implementation Specialist (**Source Code and Tests only**).
+- **UI Engineer (UI)**: Frontend/Visual implementation.
+- **QA Evaluator (QA)**: Integration/E2E testing.
 
 ### Your Capabilities:
 - You can directly inspect the project structure and environment status to answer user questions.
@@ -33,12 +40,12 @@ Your role is to act as a Supervisor for a team of autonomous software engineerin
 ### Rules:
 - **Work-Flow Awareness**: You operate in a **Sequential/Synchronous** system. Agents do NOT run in parallel while you talk to the user.
 - **Honest Communication**: NEVER say 'QA is currently testing' or 'The developer is working'. Instead, say 'I will now assign this to QA' or 'I am handing over to the Architect'.
-- If you can answer a question directly using your diagnostic information, do so and route to \"FINISH\".
-- If the user needs work done, create tasks and route to the appropriate agent.
-- If you need more info from the user, route to \"HUMAN\".
+- **Global Memory Capability**: If the user explicitly states a preference, global rule, or personal fact (e.g., "Always use TypeScript", "From now on, test with pytest"), you must use the `add_memory` tool to save it permanently so all agents can remember it across sessions.
+- If you can answer a question directly using your diagnostic information, do so and route to "FINISH".
+- If the user needs work done, create tasks and route to the appropriate agent via `route_tasks`.
+- If you need more info from the user or want to answer them, route to "HUMAN" via `route_tasks`.
 
-Response format:
-You must provide 'reasoning' (your direct message to the user) and classify the 'intent'.
+**CRITICAL RULE**: You MUST use the `route_tasks` tool to conclude your turn and reply to the user. Do not just output text! If you do not use `route_tasks`, the cycle will fail.
 """
 
 class PORoutingDecision(BaseModel):
@@ -66,112 +73,81 @@ class PORoutingDecision(BaseModel):
 PORoutingDecision.model_rebuild()
 
 
+import uuid
+from datetime import datetime, timezone
+from langchain_core.messages import HumanMessage, SystemMessage, ToolMessage
+from harnesscore.schema import JournalEntry, TokenUsage
 from harnesscore.utils.journaler import Journaler
+from harnesscore.tools.journal import JournalTool
+
+def _ts():
+    return datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+
+def _extract_tokens(response) -> TokenUsage:
+    meta = getattr(response, "usage_metadata", {})
+    if not meta:
+        return TokenUsage()
+    return TokenUsage(
+        input_tokens=meta.get("input_tokens", 0),
+        output_tokens=meta.get("output_tokens", 0),
+        thinking_tokens=meta.get("thinking_tokens", 0) # Placeholder if API ever supports it
+    )
+
+from harnesscore.agents.base import run_agent_react_loop
 
 def po_node(state: SystemState, config: HarnessConfig) -> dict:
-    """LangGraph node execution for the Product Owner."""
-    llm = get_llm(config, "PO")
-    structured_llm = llm.with_structured_output(PORoutingDecision)
-    
+    """LangGraph node execution using a native Tool Calling loop for PO."""
     project_root = Path(config.project_root or ".")
     harness_dir = project_root / ".harness"
-    file_tool = FileIOTool(project_root)
-    shell_tool = ShellTool(project_root)
+    llm = get_llm(config, "PO")
 
-    # --- 1. Basic Environmental Awareness (Direct Diagnostics) ---
-    try:
-        file_structure = shell_tool.list_files_tree(depth=2)
-        git_status = shell_tool.run_command("git status --short")
-    except:
-        file_structure = "Unknown (Error)"
-        git_status = "Unknown (Error)"
+    # --- 1. Define Tools explicitly for PO ---
+    def read_journal(target_role: str = "QA Evaluator", limit: int = 5) -> str:
+        """Read the recent journal to understand what other agents have done."""
+        jtool = JournalTool(harness_dir)
+        return jtool.read_journal(limit=limit, role_filter=target_role)
+
+    def route_tasks(next_agent: str, response: str, new_tasks: str = "{}") -> str:
+        """
+        Final action to route work to the next agent or finish.
+        Args:
+            next_agent: one of 'System Architect', 'Core Developer', 'QA Evaluator', 'UI Engineer', 'HUMAN', 'FINISH'.
+            response: Your message directed to the next_agent or user.
+            new_tasks: JSON string of new tasks e.g. {"T1": "Fix bug"}.
+        """
+        return "ROUTED"
+        
+    def list_files_tree(depth: int = 2) -> str:
+        """List files in the project."""
+        shell_tool = ShellTool(project_root)
+        return shell_tool.list_files_tree(depth)
+
+    def run_shell_command(command: str) -> str:
+        """Run robust linux shell commands (e.g., cat, grep, ls, python) to inspect the codebase or execute scripts."""
+        shell_tool = ShellTool(project_root)
+        return shell_tool.run_command(command)
+
+    def add_memory(fact: str) -> str:
+        """Save a specific user preference, structural rule, or important context to global long-term memory."""
+        from harnesscore.tools.memory import MemoryTool
+        mem_tool = MemoryTool(harness_dir)
+        return mem_tool.add_memory(fact)
+
+    tools = [read_journal, route_tasks, list_files_tree, run_shell_command, add_memory]
+
 
     # --- 2. Construct context ---
-    # Smart context loading: Read arch_notes if user asks about design/app status
-    query = state.user_prompt.lower()
-    design_context = ""
-    if any(k in query for k in ["내용", "기억", "설계", "디자인", "아키텍처", "상태", "status", "design", "arch"]):
-        # Read Architecture Notes (Planner context)
-        arch_file = harness_dir / "arch_notes.md"
-        if arch_file.exists():
-            try:
-                design_context += f"\n--- Current Design (arch_notes.md) ---\n{arch_file.read_text(encoding='utf-8')}\n"
-            except:
-                pass
-        
-        # Read Implementation Notes (Generator context)
-        dev_file = harness_dir / "dev_notes.md"
-        if dev_file.exists():
-            try:
-                design_context += f"\n--- Current Implementation (dev_notes.md) ---\n{dev_file.read_text(encoding='utf-8')}\n"
-            except:
-                pass
-
-        # Read Project Manifests (README, etc.)
-        for doc_name in ["README.md", "pyproject.toml", "package.json"]:
-            doc_path = project_root / doc_name
-            if doc_path.exists():
-                try:
-                    # Read first 2000 chars to avoid prompt bloat
-                    content = doc_path.read_text(encoding="utf-8")[:2000]
-                    design_context += f"\n--- Project {doc_name} ---\n{content}\n"
-                except:
-                    pass
-
-    context_lines = [
-        f"User Prompt: {state.user_prompt}",
-        f"Project Structure:\n{file_structure}",
-        f"Git Status:\n{git_status}",
-        f"Tasks: {json.dumps(state.tasks, ensure_ascii=False)}",
-        f"Completed: {json.dumps(state.completed_tasks, ensure_ascii=False)}",
-        design_context
-    ]
-    
-    if state.history_logs:
-        recent = "\n".join([f"- {l.agent_name}: {l.details}" for l in state.history_logs[-5:]])
-        context_lines.append(f"Recent History:\n{recent}")
-
-    # --- 3. Call LLM ---
-    print(f"[PO] Analyzing with diagnostic context...")
-    
-    # Load custom instructions
     custom_instr = PromptManager.load_custom_instructions(harness_dir, "PO")
+    sys_prompt = PO_SYSTEM_PROMPT + custom_instr
     
-    decision: PORoutingDecision = structured_llm.invoke([
-        SystemMessage(content=PO_SYSTEM_PROMPT + custom_instr),
-        HumanMessage(content="\n".join(context_lines))
-    ])
-    
-    updated_tasks = dict(state.tasks)
-    updated_tasks.update(decision.new_tasks)
-    
-    action_type = f"ORCHESTRATION_{decision.intent}"
-    if decision.next_agent == "FINISH":
-        action_type = "MESSAGE"
-        
-    log = TaskLog(
-        agent_name="PO",
-        action_type=action_type,
-        details=decision.response,
-        logs=f"Reasoning: {decision.reasoning}",
-        status="SUCCESS"
+    context_str = (
+        f"User Prompt: {state.user_prompt}\n"
+        f"Tasks: {json.dumps(state.tasks, ensure_ascii=False)}\n"
+        f"Completed Tasks: {json.dumps(state.completed_tasks, ensure_ascii=False)}\n"
+        f"Latest Error: {state.latest_error or 'None'}\n"
     )
 
-    # Explicit Journaling
-    Journaler.log_activity(
-        harness_dir=harness_dir,
-        thread_id=getattr(state, "thread_id", "unknown"),
-        log_data=log.model_dump(),
-        language=config.language
+    return run_agent_react_loop(
+        agent_name="PO", state=state, llm=llm, tools=tools, 
+        sys_prompt=sys_prompt, context_str=context_str, harness_dir=harness_dir, max_loops=15
     )
-
-    return {
-        "current_assignee": "PO",
-        "next_agent": decision.next_agent,
-        "tasks": updated_tasks,
-        "history_logs": [log],
-        "messages": [
-            {"role": "user", "content": state.user_prompt},
-            {"role": "assistant", "content": decision.response}
-        ]
-    }

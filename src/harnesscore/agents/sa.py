@@ -20,10 +20,10 @@ SA_SYSTEM_PROMPT = """\
 You are the **System Architect (SA)** of an autonomous software engineering team.
 
 Your responsibilities:
-1. Analyze the codebase and the assigned task(s) to understand the current design.
-2. Produce a concise architectural decision or design note that will guide the developer agents.
-3. Identify which source files will need to be created or modified.
-4. Mark every assigned task you have resolved as completed.
+1. Analyze codebase and tasks to understand current design.
+2. **Technical Blueprint**: Produce comprehensive architecture notes in `.harness/arch_notes.md` or `docs/SYSTEM_ARCHITECTURE.md`.
+3. **Spec for CD**: Define files, classes, and API signatures so clearly that the Core Developer (CD) can implement them without further clarification.
+4. Mark resolved tasks as completed.
 
 You have the following context available:
 - user_prompt: The original user requirement.
@@ -78,89 +78,63 @@ def _gather_codebase_context(
         return f"(search failed: {exc})"
 
 
+from harnesscore.agents.base import run_agent_react_loop
+from harnesscore.tools.journal import JournalTool
+
 def sa_node(state: SystemState, config: HarnessConfig) -> dict:
     """LangGraph node execution for the System Architect."""
-    print("[System Architect] Researching codebase and designing architecture...")
-
     project_root = Path(config.project_root or ".")
     harness_dir = project_root / ".harness"
-
-    # --- 1. Gather codebase context ----------------------------------------
-    keywords = state.user_prompt.split()[:3]
-    codebase_context = _gather_codebase_context(project_root, " ".join(keywords))
-
-    # --- 2. Identify which tasks belong to SA --------------------------------
-    open_tasks = {
-        tid: desc
-        for tid, desc in state.tasks.items()
-        if tid not in state.completed_tasks
-    }
-
-    # --- 3. Call the LLM -----------------------------------------------------
     llm = get_llm(config, "System Architect")
-    structured_llm = llm.with_structured_output(SADecision, include_raw=True)
+    
+    sys_prompt = SA_SYSTEM_PROMPT + PromptManager.load_custom_instructions(harness_dir, "System Architect")
+    
+    def search_codebase(query: str, pattern: str = "**/*.py") -> str:
+        """Search the codebase for snippets relevant to the query to identify files needing changes."""
+        tool = FileIOTool(project_root)
+        try:
+            results = tool.search_files(query, pattern=pattern)
+            lines = [f"[{r['file']}:{r['line_number']}] {r['line']}" for r in results[:20]]
+            return "\n".join(lines) if lines else "No relevant code found."
+        except Exception as e:
+            return f"Error: {e}"
+            
+    def write_architecture_note(content: str, affected_files: str) -> str:
+        """Write the architecture note to guide Core Developer."""
+        arch_file = harness_dir / "arch_notes.md"
+        harness_dir.mkdir(parents=True, exist_ok=True)
+        with arch_file.open("a", encoding="utf-8") as f:
+            f.write(f"\n\n## Architecture Note\n\n{content}\n")
+            f.write(f"\n**Affected files**: {affected_files}\n")
+        return "Note written successfully. arch_notes.md updated."
 
-    context_text = (
+    def read_journal(target_role: str = "PO", limit: int = 5) -> str:
+        """Read what other agents discussed."""
+        jtool = JournalTool(harness_dir)
+        return jtool.read_journal(limit=limit, role_filter=target_role)
+
+    def submit_work(message: str, next_agent: str = "PO", completed_task_id: str = None) -> str:
+        """Submit the architecture spec for review or implementation."""
+        return "WORK_SUBMITTED"
+
+    def run_shell_command(command: str) -> str:
+        """Run robust linux shell commands (e.g., cat, grep, ls, python) to inspect the codebase or execute scripts."""
+        from harnesscore.tools.shell import ShellTool
+        shell_tool = ShellTool(project_root)
+        return shell_tool.run_command(command)
+
+    tools = [search_codebase, write_architecture_note, read_journal, submit_work, run_shell_command]
+    
+    open_tasks = {
+        tid: desc for tid, desc in state.tasks.items() if tid not in state.completed_tasks
+    }
+    context_str = (
         f"User Prompt: {state.user_prompt}\n"
         f"Open Tasks (assigned to you): {json.dumps(open_tasks, ensure_ascii=False)}\n"
         f"Already Completed Tasks: {json.dumps(state.completed_tasks, ensure_ascii=False)}\n"
-        f"\nCodebase Context (relevant snippets):\n{codebase_context}\n"
     )
 
-    print("[System Architect] Calling LLM for design...")
-    
-    # Load custom instructions
-    custom_instr = PromptManager.load_custom_instructions(harness_dir, "System Architect")
-    
-    raw_result = structured_llm.invoke(
-        [SystemMessage(content=SA_SYSTEM_PROMPT + custom_instr), HumanMessage(content=context_text)]
+    return run_agent_react_loop(
+        agent_name="System Architect", state=state, llm=llm, tools=tools, 
+        sys_prompt=sys_prompt, context_str=context_str, harness_dir=harness_dir, max_loops=10
     )
-    
-    decision: SADecision = raw_result["parsed"]
-    raw_resp = raw_result["raw"]
-    
-    # Extract token usage
-    tokens = extract_token_usage(raw_resp)
-
-    print(f"[System Architect] Design complete. Resolved: {decision.resolved_task_ids}")
-
-    # --- 4. Persist architecture note to .harness/arch_notes.md -------------
-    arch_file = harness_dir / "arch_notes.md"
-    harness_dir.mkdir(parents=True, exist_ok=True)
-    with arch_file.open("a", encoding="utf-8") as f:
-        f.write(f"\n\n## Architecture Note\n\n{decision.architecture_note}\n")
-        f.write(f"\n**Affected files**: {', '.join(decision.affected_files)}\n")
-
-    # --- 5. Build return payload -------------------------------------------
-    new_completed = list(state.completed_tasks) + [
-        tid for tid in decision.resolved_task_ids if tid not in state.completed_tasks
-    ]
-
-    log = TaskLog(
-        agent_name="System Architect",
-        action_type="DESIGN",
-        input_context=context_text,
-        details=decision.response_to_user,
-        logs=(
-            f"Reasoning: {decision.reasoning}\n"
-            f"Affected files: {decision.affected_files}\n"
-            f"Codebase context search size: {len(codebase_context)} chars."
-        ),
-        status="SUCCESS",
-        tokens=tokens
-    )
-
-    # Explicit Journaling
-    Journaler.log_activity(
-        harness_dir=config.harness_dir,
-        thread_id=getattr(state, "thread_id", "unknown"),
-        log_data=log.model_dump(),
-        language=config.language
-    )
-
-    return {
-        "current_assignee": "System Architect",
-        "next_agent": "PO",
-        "completed_tasks": new_completed,
-        "history_logs": [log],
-    }

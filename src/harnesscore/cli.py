@@ -179,9 +179,13 @@ def cli(
 
 
 @app.command()
-def chat() -> None:
+def chat(
+    debug: bool = typer.Option(False, "--debug", "-d", help="Enable verbose debug logging (displays internal thoughts/tool args)"),
+) -> None:
     """Interactive mode to chat with HarnessCore agents."""
+    import os
     import uuid
+    import traceback
     from harnesscore.graph import build_graph
     from harnesscore.checkpointer.file_checkpointer import FileCheckpointer
     from harnesscore.schema import SystemState
@@ -189,9 +193,14 @@ def chat() -> None:
     from prompt_toolkit.history import InMemoryHistory
     from prompt_toolkit.styles import Style
 
+    if debug:
+        os.environ["HARNESS_DEBUG"] = "1"
+
     config = load_config()
     console.print(f"\n[bold green]HarnessCore Interactive REPL[/]")
     console.print(f"[dim]Type 'exit' or 'quit' to end session, '/reset' to start fresh.[/]\n")
+    if debug:
+        console.print("[yellow]🔧 Debug Mode Enabled: Detailed tracebacks and silent thoughts will be displayed.[/]")
     
     # Credentials check
     if not config.resolve_api_key():
@@ -210,7 +219,10 @@ def chat() -> None:
     }
     
     # Prompt Toolkit Setup
-    session = PromptSession(history=InMemoryHistory())
+    from prompt_toolkit.completion import WordCompleter
+    slash_completer = WordCompleter(['/help', '/reset', '/quit', '/exit'], ignore_case=True)
+    
+    session = PromptSession(history=InMemoryHistory(), completer=slash_completer)
     style = Style.from_dict({
         'prompt': 'ansicyan bold',
     })
@@ -252,11 +264,34 @@ def chat() -> None:
             # User said: "일반 언어와 명령어를 구분할 수 있게 해야겠어"
             # So I'll only treat / commands as system commands.
 
+            from harnesscore.schema import JournalEntry, TokenUsage
+            from harnesscore.utils.journaler import Journaler
+            from datetime import datetime, timezone
+            def _ts(): return datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+
+            user_je = JournalEntry(
+                timestamp=_ts(),
+                session_id=thread_id,
+                role="User",
+                category="Message",
+                content=user_input,
+                tokens=TokenUsage()
+            )
+            
+            # Persist user interaction to journal files 
+            Journaler.append_entry(harness_dir, user_je.model_dump())
+
             if not has_active_state:
-                current_state = SystemState(user_prompt=user_input)
+                current_state = SystemState(
+                    user_prompt=user_input,
+                    journal=[user_je]
+                )
             else:
-                # When resuming or sending new message, we update the user_prompt
-                current_state = {"user_prompt": user_input}
+                # When resuming or sending new message, we update the user_prompt and append to journal
+                current_state = {
+                    "user_prompt": user_input,
+                    "journal": [user_je]
+                }
 
             console.print(f"\n[dim]Agent working... (Thread: {thread_id})[/]")
             
@@ -266,6 +301,10 @@ def chat() -> None:
                 stop_reason = "FINISH"
 
                 for s in app_graph.stream(current_state, config_dict):
+                    # Check if stream returns __end__ or similar and skip
+                    if "__end__" in s:
+                        continue
+
                     for node_name, node_state in s.items():
                         last_node = node_name
                         
@@ -332,39 +371,46 @@ def chat() -> None:
                     state_at_break = snapshot.values
                     
                     # Diagnostic display for HITL
-                    console.print("\n" + "="*50)
-                    console.print(f"[bold yellow]✋ HITL Approval Required[/]")
+                    hitl_content = []
                     
                     # 1. What just happened?
                     logs = state_at_break.get("history_logs", [])
                     if logs:
                         last_log = logs[-1]
-                        # Handle both object and dict access (LangGraph state recovery can return dicts)
                         try:
                             agent_name = last_log.agent_name if hasattr(last_log, "agent_name") else last_log.get("agent_name", "Unknown")
                             details = last_log.details if hasattr(last_log, "details") else last_log.get("details", "N/A")
-                            console.print(f"[bold blue]Previous Action ({agent_name}):[/] {details}")
+                            hitl_content.append(Text.from_markup(f"[bold blue]⮑ Previous Action ({agent_name}):[/] {details}"))
                         except:
-                            console.print(f"[bold blue]Previous Action:[/] (Detail expansion failed)")
+                            hitl_content.append(Text("[bold blue]⮑ Previous Action:[/] (Detail expansion failed)"))
                     
                     # 2. What is next?
-                    console.print(f"[bold green]Next Plan:[/] Prepare to execute [bold cyan]{next_node}[/].")
+                    hitl_content.append(Text.from_markup(f"[bold green]↣ Next Plan:[/] Prepare to execute [bold cyan]{next_node}[/]."))
                     
                     # 3. Pending Tasks
                     tasks = state_at_break.get("tasks", {})
                     completed = state_at_break.get("completed_tasks", [])
                     pending = [desc for tid, desc in tasks.items() if tid not in completed]
                     if pending:
-                        console.print(f"[bold]Pending Tasks ({len(pending)}):[/]")
+                        hitl_content.append(Text(f"\n[Pending Tasks ({len(pending)})]", style="bold underline"))
                         for p in pending[:3]:
-                            console.print(f"  - {p}")
+                            hitl_content.append(Text(f" • {p}"))
                         if len(pending) > 3:
-                            console.print(f"  - ... and {len(pending)-3} more")
+                            hitl_content.append(Text(f" • ... and {len(pending)-3} more", style="dim"))
                     
-                    console.print("="*50)
-                    console.print(f"[dim](Type 'yes' to approve, 'no' to stop, or provide manual instructions to redirect the agents)[/]")
+                    console.print("\n")
+                    console.print(Panel(
+                        Text("\n").join(hitl_content),
+                        title="[bold orange1]✋ HUMAN-IN-THE-LOOP APPROVAL REQUIRED[/]",
+                        subtitle="[dim]Enter 'yes' to proceed, 'no' to abort, or type custom instructions[/]",
+                        border_style="orange1",
+                        padding=(1, 2)
+                    ))
                     
-                    user_feedback = session.prompt([('class:prompt', 'Approval > ')], style=style).strip()
+                    style_hitl = Style.from_dict({
+                        'prompt': 'ansiyellow bold italic',
+                    })
+                    user_feedback = session.prompt([('class:prompt', 'Manual Override > ')], style=style_hitl).strip()
                     if not user_feedback or user_feedback.lower() in ["yes", "y", "ok"]:
                         # Continue as is
                         current_state = None 
@@ -382,26 +428,28 @@ def chat() -> None:
             has_active_state = True 
             console.print("")
 
-
         except KeyboardInterrupt:
             continue # Don't exit on Ctrl+C in REPL
         except EOFError:
             break
         except Exception as e:
             console.print(f"[bold red]Error:[/] {e}")
+            if os.environ.get("HARNESS_DEBUG") == "1":
+                console.print(traceback.format_exc())
 
     console.print(f"\n[bold blue]HarnessCore session ended.[/]")
 
 
 @app.command()
 def web(
-    prompt: str = typer.Argument(..., help="Initial task description"),
-    port: int = typer.Option(8000, help="Port for the web server"),
+    port: int = typer.Option(8800, help="Port for the web server"),
 ) -> None:
-    """Launch Web mode: boot API engine and open browser dashboard."""
-    console.print(f"[bold]→[/] Starting HarnessCore in [cyan]Web[/] mode on port {port}…")
-    # TODO (Phase 4 / future): start FastAPI + open browser
-    console.print("[yellow]Web mode not yet implemented.[/]")
+    """Launch Web mode: boot API engine."""
+    import uvicorn
+
+    console.print(f"[bold]→[/] Starting HarnessCore API in [cyan]Web[/] mode on port {port}…")
+    console.print(f"  [dim]✓ API Backend running at: http://localhost:{port}[/]")
+    uvicorn.run("harnesscore.web:app", host="0.0.0.0", port=port, reload=True)
 
 
 if __name__ == "__main__":

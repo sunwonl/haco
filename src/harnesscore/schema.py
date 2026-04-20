@@ -9,19 +9,31 @@ from pydantic import BaseModel, Field
 class TokenUsage(BaseModel):
     """Tracking token consumption for an LLM call."""
     input_tokens: int = 0
-    output_tokens: int = 0
     thinking_tokens: int = 0
 
-
 class TaskLog(BaseModel):
-    """A single log entry from an agent action."""
-
+    """Legacy log entry: A single log entry from an agent action."""
     agent_name: str
     action_type: str
     input_context: Optional[str] = Field(None, description="Detailed request or context provided to the agent")
     details: str = Field(..., description="High-level action summary")
     logs: Optional[str] = Field(None, description="Detailed execution logs (tool outputs, errors, etc.)")
     status: Literal["SUCCESS", "FAIL", "IN_PROGRESS"]
+    tokens: TokenUsage = Field(default_factory=TokenUsage)
+
+
+
+class JournalEntry(BaseModel):
+    """A detailed entry logging agent interactions, thoughts, and actions."""
+
+    timestamp: str = Field(description="ISO 8601 formatted timestamp")
+    session_id: str = Field(description="Thread/Session identifier for this entry")
+    role: str = Field(description="Agent name or 'User', e.g., 'PO', 'CD', etc.")
+    category: Literal["Thought", "Action", "Result", "Message"] = Field(
+        description="The type of journaling interaction"
+    )
+    target: Optional[str] = Field(None, description="Optional target (e.g. 'QA' if Message, Tool Name if Action)")
+    content: str = Field(default="", description="The text content or tool payload")
     tokens: TokenUsage = Field(default_factory=TokenUsage)
 
 
@@ -43,9 +55,13 @@ class SystemState(BaseModel):
     file_changes: list[str] = Field(
         default_factory=list, description="File paths modified in the current branch"
     )
+    journal: Annotated[list[JournalEntry], operator.add] = Field(
+        default_factory=list,
+        description="The detailed timeline history of thoughts and actions",
+    )
     history_logs: Annotated[list[TaskLog], operator.add] = Field(
         default_factory=list,
-        description="Full execution log of all agent actions",
+        description="Legacy full execution log of all agent actions",
     )
     total_tokens: TokenUsage = Field(
         default_factory=TokenUsage,
@@ -63,6 +79,12 @@ class SystemState(BaseModel):
     def model_validate(cls, obj: Any, *args, **kwargs) -> "SystemState":
         """Ensure nested fields are coerced correctly from dicts."""
         if isinstance(obj, dict):
+            # Coerce journal
+            if "journal" in obj and isinstance(obj["journal"], list):
+                obj["journal"] = [
+                    msg if isinstance(msg, JournalEntry) else JournalEntry.model_validate(msg)
+                    for msg in obj["journal"]
+                ]
             # Coerce history_logs
             if "history_logs" in obj and isinstance(obj["history_logs"], list):
                 obj["history_logs"] = [
@@ -77,4 +99,5 @@ class SystemState(BaseModel):
 # Order of rebuild matters: children first
 TokenUsage.model_rebuild()
 TaskLog.model_rebuild()
+JournalEntry.model_rebuild()
 SystemState.model_rebuild()

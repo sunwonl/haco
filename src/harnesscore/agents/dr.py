@@ -22,14 +22,15 @@ You are the **Design Reviewer (DR)**. Your role is to serve as the quality gate 
 
 ### Your Responsibilities:
 1. **Architecture Review**: Examine the `arch_notes.md` produced by the System Architect.
-2. **Schema Validation**: Ensure Pydantic/SQLAlchemy models are logically sound and follow best practices.
-3. **Consistency Check**: Verify that the proposed changes align with the original user requirement and existing codebase conventions.
+2. **Implementation Readiness**: Verify if the SA's documentation is specific enough (file paths, class/function signatures, API contracts) for the Core Developer (CD) to implement without guessing.
+3. **Schema Validation**: Ensure Pydantic/SQLAlchemy models are logically sound.
+4. **Consistency**: Verify alignment with the original user requirement and project conventions.
 
 ### Your Verdict:
-- **PASS**: The design is sound, consistent, and ready for the Core Developer to implement.
-- **REVISE**: The design has flaws, missing information, or logic errors. Provide specific feedback for the System Architect to fix.
+- **PASS**: The design is sound, consistent, and **immediately actionable** by CD.
+- **REVISE**: The design has flaws or is too vague. Provide specific feedback for the SA to fix.
 
-You must be rigorous and technical.
+You must be rigorous and technical. Do not let vague designs through to the implementation phase.
 """
 
 class DRDecision(BaseModel):
@@ -40,83 +41,78 @@ class DRDecision(BaseModel):
 DRDecision.model_rebuild()
 
 
+from harnesscore.agents.base import run_agent_react_loop
+from harnesscore.tools.journal import JournalTool
+
 def dr_node(state: SystemState, config: HarnessConfig) -> dict:
     """LangGraph node execution for the Design Reviewer."""
-    print("[Design Reviewer] Reviewing architecture and schema...")
-
     project_root = Path(config.project_root or ".")
     harness_dir = project_root / ".harness"
-    val_tool = ValidationTool(project_root)
-    file_tool = FileIOTool(project_root)
-
-    # --- 1. Gather context ---
-    # Read the arch notes created by SA
-    arch_notes = ""
-    arch_file = harness_dir / "arch_notes.md"
-    if arch_file.exists():
-        arch_notes = arch_file.read_text(encoding="utf-8")
-    else:
-        arch_notes = "Error: Architecture notes file missing."
-
-    # Perform automated sync check
-    sync_report = val_tool.check_architecture_sync()
-    
-    # Try to find any newly written schema files to validate
-    # (SA often writes docs to docs/ or models.py)
-    schema_val_reports = []
-    # Heuristic: search for files mentioned in arch_notes and validate if they end in .py
-    import re
-    files = re.findall(r"#### \[(?:NEW|MODIFY)\]\s+`?([^`\s\(\)]+)`?", arch_notes)
-    for f in files:
-        if f.endswith(".py"):
-            schema_val_reports.append(val_tool.validate_schema(f))
-
-    # --- 2. Call LLM ---
     llm = get_llm(config, "Design Reviewer")
-    structured_llm = llm.with_structured_output(DRDecision)
-
-    context_lines = [
-        f"User Prompt: {state.user_prompt}",
-        f"\n--- Architecture Notes ---\n{arch_notes}",
-        f"\n--- Automated Sync Report ---\n{sync_report}",
-        f"\n--- Schema Validation Reports ---\n" + ("\n".join(schema_val_reports) if schema_val_reports else "No schema files to validate."),
-    ]
-
-    print("[Design Reviewer] Calling LLM for design verdict...")
     
-    # Load custom instructions
-    custom_instr = PromptManager.load_custom_instructions(harness_dir, "Design Reviewer")
+    sys_prompt = DR_SYSTEM_PROMPT + PromptManager.load_custom_instructions(harness_dir, "Design Reviewer")
     
-    decision: DRDecision = structured_llm.invoke([
-        SystemMessage(content=DR_SYSTEM_PROMPT + custom_instr),
-        HumanMessage(content="\n".join(context_lines))
-    ])
-    
-    print(f"[Design Reviewer] Verdict: {decision.verdict}")
+    def read_arch_notes() -> str:
+        """Read architecture notes for design context."""
+        arch = harness_dir / "arch_notes.md"
+        return arch.read_text(encoding="utf-8") if arch.exists() else "Error: Architecture notes file missing."
 
-    # --- 3. Build return payload ---
-    log = TaskLog(
-        agent_name="Design Reviewer",
-        action_type="REVIEW",
-        details=decision.feedback,
-        logs=(
-            f"Verdict: {decision.verdict}\n"
-            f"Reasoning: {decision.reasoning}\n"
-            f"Sync Report: {sync_report}"
-        ),
-        status="SUCCESS" if decision.verdict == "PASS" else "FAIL"
+    def check_architecture_sync() -> str:
+        """Check if tests and architectural spec are synced."""
+        val_tool = ValidationTool(project_root)
+        try:
+            return val_tool.check_architecture_sync()
+        except Exception as e:
+            return f"Error: {e}"
+        
+    def validate_schema(file_path: str) -> str:
+        """Validate if a python schema file is well-formed statically."""
+        val_tool = ValidationTool(project_root)
+        try:
+            return val_tool.validate_schema(file_path)
+        except Exception as e:
+            return f"Error: {e}"
+
+    def read_journal(target_role: str = "System Architect", limit: int = 5) -> str:
+        """Read what the System Architect designed."""
+        jtool = JournalTool(harness_dir)
+        return jtool.read_journal(limit=limit, role_filter=target_role)
+
+    def submit_review(verdict: Literal["PASS", "REVISE"], message: str, next_agent: str = "System Architect", completed_task_id: str = None) -> str:
+        """
+        Submit the review verdict. 
+        If passing, set next_agent to 'Core Developer'.
+        If revise, set next_agent to 'System Architect'.
+        """
+        return "WORK_SUBMITTED"
+
+    def run_shell_command(command: str) -> str:
+        """Run robust linux shell commands (e.g., cat, grep, ls, python) to inspect the codebase or execute scripts."""
+        from harnesscore.tools.shell import ShellTool
+        shell_tool = ShellTool(project_root)
+        return shell_tool.run_command(command)
+
+    tools = [read_arch_notes, check_architecture_sync, validate_schema, read_journal, submit_review, run_shell_command]
+    
+    context_str = (
+        f"User Prompt: {state.user_prompt}\n"
     )
 
-    Journaler.log_activity(
-        harness_dir=harness_dir,
-        thread_id=getattr(state, "thread_id", "unknown"),
-        log_data=log.model_dump(),
-        language=config.language
+    result = run_agent_react_loop(
+        agent_name="Design Reviewer", state=state, llm=llm, tools=tools, 
+        sys_prompt=sys_prompt, context_str=context_str, harness_dir=harness_dir, max_loops=10
     )
-
-    return {
-        "current_assignee": "Design Reviewer",
-        "next_agent": "Core Developer" if decision.verdict == "PASS" else "System Architect",
-        "latest_error": decision.feedback if decision.verdict == "REVISE" else None,
-        "history_logs": [log],
-    }
+    
+    # Evaluate returning properties based on review
+    last_msg = ""
+    for j in result["journal"]:
+        if j.category == "Message":
+            last_msg = j.content.upper()
+            
+    if "REVISE" in last_msg or "REVISE" in result.get("next_agent", "").upper() or result.get("next_agent") == "System Architect":
+        result["latest_error"] = last_msg
+        result["next_agent"] = "System Architect"
+    else:
+        result["next_agent"] = "Core Developer"
+        
+    return result

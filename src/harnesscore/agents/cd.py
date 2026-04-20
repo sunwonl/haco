@@ -22,11 +22,11 @@ CD_SYSTEM_PROMPT = """\
 You are the **Core Developer (CD)** of an autonomous software engineering team.
 
 Your responsibilities:
-1. Read the architecture notes provided to understand *what* to build and *where*.
-2. Generate complete, working source code for every file listed in the architecture note.
-3. For each file, output the full content – no stubs, no placeholder comments.
-4. Follow existing project conventions (language, import style, etc.) revealed by the codebase snippets.
-5. Mark each task you have fully implemented as resolved.
+1. Read SA's architecture notes to understand *what* to build.
+2. **Code Implementation**: Write full, working source code (`*.py`). No stubs.
+3. **Unit Testing**: Write and run tests (`pytest`).
+4. **Documentation**: You are **NOT** responsible for architectural or user documentation. Focus only on code and docstrings.
+5. Mark implemented tasks as resolved.
 
 Rules:
 - Never output partial code. Every file must be runnable as-is.
@@ -66,137 +66,80 @@ def _read_arch_notes(harness_dir: Path) -> str:
     return "No architecture notes available."
 
 
+from harnesscore.agents.base import run_agent_react_loop
+from harnesscore.tools.journal import JournalTool
+from harnesscore.tools.git_tool import GitTool
+
 def cd_node(state: SystemState, config: HarnessConfig) -> dict:
     """LangGraph node execution for the Core Developer."""
-    print("[Core Developer] Starting implementation...")
-
     project_root = Path(config.project_root or ".").resolve()
     harness_dir = project_root / ".harness"
-    file_tool = FileIOTool(project_root)
-    shell_tool = ShellTool(project_root)
-
-    # --- 1. Gather context ------------------------------------------------
-    arch_notes = _read_arch_notes(harness_dir)
-    open_tasks = {
-        tid: desc
-        for tid, desc in state.tasks.items()
-        if tid not in state.completed_tasks
-    }
-
-    # --- 2. Call LLM -------------------------------------------------------
     llm = get_llm(config, "Core Developer")
-    structured_llm = llm.with_structured_output(CDDecision, include_raw=True)
+    
+    sys_prompt = CD_SYSTEM_PROMPT + PromptManager.load_custom_instructions(harness_dir, "Core Developer")
+    
+    def read_arch_notes() -> str:
+        """Read the latest architecture notes written by System Architect."""
+        arch = harness_dir / "arch_notes.md"
+        return arch.read_text(encoding="utf-8") if arch.exists() else "No arch notes."
+        
+    def write_file(relative_path: str, content: str) -> str:
+        """Write source code content to a file. Provide full file content."""
+        file_tool = FileIOTool(project_root)
+        try:
+            file_tool.write_file(relative_path, content)
+            return f"Successfully wrote {relative_path}"
+        except Exception as e:
+            return f"Error writing file: {e}"
 
-    context_text = (
+    def run_tests(command: str = "python -m pytest") -> str:
+        """Run tests, defaults to pytest."""
+        shell_tool = ShellTool(project_root)
+        return shell_tool.run_command(command)
+        
+    def read_journal(target_role: str = "System Architect", limit: int = 5) -> str:
+        """Read the recent journal to understand what other agents have done."""
+        jtool = JournalTool(harness_dir)
+        return jtool.read_journal(limit=limit, role_filter=target_role)
+
+    def submit_work(message: str, next_agent: str = "QA Evaluator", completed_task_id: str = None) -> str:
+        """
+        Final action to submit implementation.
+        Args:
+            message: Your final status message and reasoning.
+            next_agent: 'QA Evaluator' usually.
+            completed_task_id: ID of the task you finished.
+        """
+        return "WORK_SUBMITTED"
+
+    def run_shell_command(command: str) -> str:
+        """Run robust linux shell commands (e.g., cat, grep, ls, python) to inspect the codebase or execute scripts."""
+        shell_tool = ShellTool(project_root)
+        return shell_tool.run_command(command)
+        
+    tools = [read_arch_notes, write_file, run_tests, read_journal, submit_work, run_shell_command]
+    
+    open_tasks = {
+        tid: desc for tid, desc in state.tasks.items() if tid not in state.completed_tasks
+    }
+    context_str = (
         f"User Prompt: {state.user_prompt}\n"
         f"Open Tasks (assigned to you): {json.dumps(open_tasks, ensure_ascii=False)}\n"
         f"Already Completed Tasks: {json.dumps(state.completed_tasks, ensure_ascii=False)}\n"
-        f"\n--- Architecture Notes ---\n{arch_notes}\n"
     )
 
-    print("[Core Developer] Calling LLM for implementation code...")
-    
-    # Load custom instructions
-    custom_instr = PromptManager.load_custom_instructions(harness_dir, "Core Developer")
-    
-    raw_result = structured_llm.invoke(
-        [SystemMessage(content=CD_SYSTEM_PROMPT + custom_instr), HumanMessage(content=context_text)]
+    result = run_agent_react_loop(
+        agent_name="Core Developer", state=state, llm=llm, tools=tools, 
+        sys_prompt=sys_prompt, context_str=context_str, harness_dir=harness_dir, max_loops=10
     )
     
-    decision: CDDecision = raw_result["parsed"]
-    raw_resp = raw_result["raw"]
-    
-    # Extract token usage
-    tokens = extract_token_usage(raw_resp)
-
-    print(f"[Core Developer] Writing {len(decision.files)} file(s)...")
-
-    # --- 3. Write files ----------------------------------------------------
-    written_paths: list[str] = []
-    errors: list[str] = []
-
-    for fc in decision.files:
-        rel = fc.relative_path.lstrip("/")
-        try:
-            file_tool.write_file(rel, fc.content)
-            written_paths.append(rel)
-        except Exception as exc:
-            errors.append(f"Failed to write '{rel}': {exc}")
-
-    # --- 4. Run tests using ShellTool --------------------------------------
-    print("[Core Developer] Running tests via ShellTool...")
-    test_output = shell_tool.run_command("python -m pytest --tb=short -q")
-    test_passed = "Failed" not in test_output and "Error" not in test_output
-    print(f"[Core Developer] Tests: {'PASSED' if test_passed else 'FAILED'}")
-
-    # --- 5. Git commit (only on test pass) ---------------------------------
-    commit_hash: Optional[str] = None
-    if test_passed and written_paths and config.git.auto_commit:
+    # Auto-commit feature
+    if config.git.auto_commit and result["next_agent"] == "QA Evaluator":
         try:
             git = GitTool(project_root)
             git.add(".")
-            git.commit(decision.commit_message)
-            commit_hash = git.log(n=1).split()[0]
-        except Exception as exc:
-            errors.append(f"Git commit failed: {exc}")
-
-    # --- 6. Build return payload ------------------------------------------
-    latest_error: Optional[str] = None
-    status = "SUCCESS"
-
-    if errors:
-        latest_error = "\n".join(errors)
-        status = "FAIL"
-    elif not test_passed:
-        latest_error = f"Tests failed:\n{test_output[:800]}"
-        status = "FAIL"
-
-    new_completed = list(state.completed_tasks)
-    if status == "SUCCESS":
-        new_completed += [
-            tid for tid in decision.resolved_task_ids if tid not in new_completed
-        ]
-
-    log = TaskLog(
-        agent_name="Core Developer",
-        action_type="IMPLEMENTATION",
-        input_context=context_text,
-        details=decision.response_to_user,
-        logs=(
-            f"Reasoning: {decision.reasoning}\n"
-            f"Written: {written_paths}\n"
-            f"Test Output:\n{test_output}\n"
-            f"Commit: {commit_hash or 'none'}"
-        ),
-        status=status,
-        tokens=tokens
-    )
-
-    # Write implementation notes (Generator Scratchpad)
-    try:
-        dev_notes_path = config.harness_dir / "dev_notes.md"
-        dev_notes_path.write_text(
-            f"# Core Developer Implementation Notes\n\n"
-            f"**Last Action**: {decision.response_to_user}\n\n"
-            f"**Technical Reasoning**:\n{decision.reasoning}\n",
-            encoding="utf-8"
-        )
-    except:
-        pass
-
-    # Explicit Journaling
-    Journaler.log_activity(
-        harness_dir=config.harness_dir,
-        thread_id=getattr(state, "thread_id", "unknown"),
-        log_data=log.model_dump(),
-        language=config.language
-    )
-
-    return {
-        "current_assignee": "Core Developer",
-        "next_agent": "QA Evaluator" if test_passed else "PO",
-        "completed_tasks": new_completed,
-        "file_changes": list(set(state.file_changes + written_paths)),
-        "latest_error": latest_error,
-        "history_logs": [log],
-    }
+            git.commit("Auto-commit CD Changes via ReAct Loop")
+        except:
+            pass
+            
+    return result

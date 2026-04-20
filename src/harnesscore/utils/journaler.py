@@ -10,6 +10,58 @@ class Journaler:
     _lock = threading.Lock()
     
     @staticmethod
+    def append_entry(harness_dir: Path, dict_entry: dict) -> None:
+        """
+        Appends a conversational JournalEntry to timeline.md and conversation.json.
+        dict_entry is the dump of JournalEntry to avoid circular imports.
+        """
+        import json
+        timeline_path = harness_dir / "timeline.md"
+        json_path = harness_dir / "conversation.json"
+        
+        ts = dict_entry.get("timestamp", "")
+        session_id = dict_entry.get("session_id", "")
+        role = dict_entry.get("role", "Unknown")
+        category = dict_entry.get("category", "")
+        target = dict_entry.get("target")
+        content = dict_entry.get("content", "")
+        tokens = dict_entry.get("tokens", {})
+        
+        cat_str = category
+        if category == "Message" and target:
+            cat_str = f"메시지: to {target}"
+        elif category == "Action" and target:
+            cat_str = f"Action : use tool> {target}" # matches requested format kind of
+        elif category == "Result":
+            cat_str = "Action : result"
+        
+        md_line = f"- [{role}] : <{cat_str}> {content}"
+        
+        in_t = tokens.get("input_tokens", 0)
+        out_t = tokens.get("output_tokens", 0)
+        think_t = tokens.get("thinking_tokens", 0)
+        tokens_line = f"- Tokens: `in: {in_t}` | `out: {out_t}` | `think: {think_t}`"
+        
+        entry_md = f"## [{ts}] : {session_id}\n{md_line}\n{tokens_line}\n\n"
+        
+        with Journaler._lock:
+            if not timeline_path.exists():
+                timeline_path.write_text("# HarnessCore Timeline\n\n", encoding="utf-8")
+            with timeline_path.open("a", encoding="utf-8") as f:
+                f.write(entry_md)
+                
+            # Append to JSON
+            existing = []
+            if json_path.exists():
+                try:
+                    existing = json.loads(json_path.read_text(encoding="utf-8"))
+                except json.JSONDecodeError:
+                    pass
+            existing.append(dict_entry)
+            json_path.write_text(json.dumps(existing, indent=2, ensure_ascii=False), encoding="utf-8")
+
+    
+    @staticmethod
     def log_activity(harness_dir: Path, thread_id: str, log_data: dict, language: str = "en") -> None:
         """
         Writes a detailed, human-readable log entry to journals.md.

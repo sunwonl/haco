@@ -1,0 +1,26 @@
+{
+  "llm": {
+    "provider": "google-genai",
+    "default_model": "gemini-2.0-flash",
+    "agent_models": {}
+  },
+  "credentials": {
+    "api_key_env": "GEMINI_API_KEY",
+    "gcp_credentials_path": null
+  },
+  "git": {
+    "base_branch": "main",
+    "auto_commit": true
+  },
+  "project_root": null,
+  "agent_paths": {},
+  "max_iterations": 10,
+  "ignore_patterns": [
+    ".git",
+    "node_modules",
+    "__pycache__",
+    ".harness"
+  ],
+  "mcp_servers": {},
+  "language": "en"
+}

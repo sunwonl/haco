@@ -6,6 +6,7 @@ from harnesscore.tools.process_control import ProcessControlTool
 from harnesscore.tools.shell import ShellTool
 from harnesscore.tools.network import NetworkTool
 from harnesscore.tools.validation import ValidationTool
+from harnesscore.tools.journal import JournalTool
 
 __all__ = [
     "FileIOTool",
@@ -16,6 +17,7 @@ __all__ = [
     "ShellTool",
     "NetworkTool",
     "ValidationTool",
+    "JournalTool",
 ]
 
 
