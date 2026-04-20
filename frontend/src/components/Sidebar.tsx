@@ -1,4 +1,4 @@
-export type TabType = 'workspace' | 'monitor' | 'config' | 'docs';
+export type TabType = 'workspace' | 'config' | 'docs';
 
 export default function Sidebar({ activeTab, onTabChange }: { activeTab: TabType, onTabChange: (t: TabType) => void }) {
     return (
@@ -12,26 +12,17 @@ export default function Sidebar({ activeTab, onTabChange }: { activeTab: TabType
                     <button
                         onClick={() => onTabChange('workspace')}
                         className={`w-full py-3 flex items-center justify-center transition-all duration-200 ${activeTab === 'workspace'
-                                ? 'text-primary border-l-2 border-primary bg-surface-container'
-                                : 'text-on-surface-variant opacity-60 hover:opacity-100 hover:bg-surface-container border-l-2 border-transparent'
+                            ? 'text-primary border-l-2 border-primary bg-surface-container'
+                            : 'text-on-surface-variant opacity-60 hover:opacity-100 hover:bg-surface-container border-l-2 border-transparent'
                             }`}>
                         <span className="material-symbols-outlined fill-current">forum</span>
                     </button>
 
                     <button
-                        onClick={() => onTabChange('monitor')}
-                        className={`w-full py-3 flex items-center justify-center transition-all duration-200 ${activeTab === 'monitor'
-                                ? 'text-primary border-l-2 border-primary bg-surface-container'
-                                : 'text-on-surface-variant opacity-60 hover:opacity-100 hover:bg-surface-container border-l-2 border-transparent'
-                            }`}>
-                        <span className="material-symbols-outlined">monitoring</span>
-                    </button>
-
-                    <button
                         onClick={() => onTabChange('config')}
                         className={`w-full py-3 flex items-center justify-center transition-all duration-200 ${activeTab === 'config'
-                                ? 'text-primary border-l-2 border-primary bg-surface-container'
-                                : 'text-on-surface-variant opacity-60 hover:opacity-100 hover:bg-surface-container border-l-2 border-transparent'
+                            ? 'text-primary border-l-2 border-primary bg-surface-container'
+                            : 'text-on-surface-variant opacity-60 hover:opacity-100 hover:bg-surface-container border-l-2 border-transparent'
                             }`}>
                         <span className="material-symbols-outlined">settings_suggest</span>
                     </button>
@@ -39,8 +30,8 @@ export default function Sidebar({ activeTab, onTabChange }: { activeTab: TabType
                     <button
                         onClick={() => onTabChange('docs')}
                         className={`w-full py-3 flex items-center justify-center transition-all duration-200 ${activeTab === 'docs'
-                                ? 'text-primary border-l-2 border-primary bg-surface-container'
-                                : 'text-on-surface-variant opacity-60 hover:opacity-100 hover:bg-surface-container border-l-2 border-transparent'
+                            ? 'text-primary border-l-2 border-primary bg-surface-container'
+                            : 'text-on-surface-variant opacity-60 hover:opacity-100 hover:bg-surface-container border-l-2 border-transparent'
                             }`}>
                         <span className="material-symbols-outlined">menu_book</span>
                     </button>

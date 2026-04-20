@@ -69,11 +69,15 @@ export function useHarnessEngine() {
         }
     }
 
-    const resumeRun = async (feedback?: string) => {
+    const resumeRun = async (feedback?: any) => {
         if (!store.threadId) return
+
+        // Ensure feedback is a string (prevent [object Object])
+        const feedbackStr = (typeof feedback === 'string') ? feedback : '';
+
         store.setAgentStatus(store.nextNode ?? 'PO', true, false, null)
         bindEventSource(
-            `${BASE}/api/interrupt/${store.threadId}${feedback ? `?feedback=${encodeURIComponent(feedback)}` : ''}`
+            `${BASE}/api/interrupt/${store.threadId}${feedbackStr ? `?feedback=${encodeURIComponent(feedbackStr)}` : ''}`
         )
     }
 

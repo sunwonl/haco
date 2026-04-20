@@ -310,5 +310,29 @@
       "input_tokens": 0,
       "thinking_tokens": 0
     }
+  },
+  {
+    "timestamp": "2026-04-20 14:11:32 UTC",
+    "session_id": "5c16ce8e",
+    "role": "Core Developer",
+    "category": "Action",
+    "target": "submit_work",
+    "content": "{\"message\": \"done\"}",
+    "tokens": {
+      "input_tokens": 0,
+      "thinking_tokens": 0
+    }
+  },
+  {
+    "timestamp": "2026-04-20 14:11:32 UTC",
+    "session_id": "5c16ce8e",
+    "role": "Core Developer",
+    "category": "Message",
+    "target": "PO",
+    "content": "done",
+    "tokens": {
+      "input_tokens": 0,
+      "thinking_tokens": 0
+    }
   }
 ]

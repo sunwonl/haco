@@ -1,20 +1,27 @@
 # HarnessCore - 개발 로드맵 및 구현 계획
 
-> 마지막 업데이트: 2026-04-19  
+> 마지막 업데이트: 2026-04-20  
 > 이 파일은 다음 세션에서 이어서 사용하기 위한 개발 기록입니다.
 
 ---
 
 ## ✅ 완료된 작업들
 
-### Phase 5~7: Agent 코어 구축
-- LangGraph, FileCheckpointer, Agent Tools (File, Git, Shell) 구현
+### Phase 4~6: Agent 코어 구축
+- LangGraph, FileCheckpointer, Agent Tools (File, Git, Shell, Network, Journal, Memory, Validation, ProcessControl) 구현
 - PO, SA, CD, UI, QA, DR 6개 에이전트 완성 및 통합
 - 모든 에이전트를 Generic ReAct Loop 템플릿으로 통합 (`base.py`)
-- Debug 모드(`--debug`), HITL Breakpoints, 대화 세션(REPL) 구현
+- Debug 모드(`harness chat --debug`), HITL Breakpoints, 대화 세션(REPL) 구현
 - Global Semantic Memory (`.harness/memory.md`) 자동 주입
+- `harness init` — 프로젝트 초기화 및 `.harness/instructions/` 템플릿 생성
+- `harness reset` — `.harness/` 초기화 (백업 옵션 포함)
+- `harness cli` — 단발성 파이프라인 실행
+- `harness chat` — 대화형 REPL (`/help`, `/reset`, `/quit`, `/exit` 슬래시 커맨드 포함)
+- [x] REPL 인터페이스 (`harness chat`) 및 슬래시 커맨드 (/help, /reset, /quit) 구현
+- [x] E2E 파이프라인 통합 테스트 인프라 및 엔진 견고화 (429 Retry) 구현
+- [x] 도구 목록: Shell, Network, FileIO, Git, PathGuard, Journaler
 
-### Phase 8: Web UI 구축 (완료)
+### Phase 7~8: Web UI 구축 (완료)
 - Vite + React + TypeScript + Tailwind v4 프론트엔드 기반
 - **Stitch 디자인** 기반 3열 레이아웃 (FileExplorer | ChatWorkspace | LogPanel)
 - `src/harnesscore/web.py` FastAPI 백엔드 → 정적 파일 서빙 통합

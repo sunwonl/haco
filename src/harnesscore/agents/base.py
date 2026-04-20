@@ -4,6 +4,7 @@ Provides a unified pattern for executing tools and persisting conversational jou
 """
 import json
 import uuid
+import time
 from pathlib import Path
 from typing import List, Callable, Dict, Any
 from datetime import datetime, timezone
@@ -60,6 +61,28 @@ def run_agent_react_loop(
         global_memory_str = mem_file.read_text(encoding="utf-8")
         context_str += f"\n\n--- 🧠 GLOBAL LONG-TERM MEMORY ---\n{global_memory_str}\n--------------------------------"
 
+    # Inject Active Skills & Protocols
+    skills_dir = harness_dir / "skills"
+    if skills_dir.exists() and skills_dir.is_dir():
+        skills_content = []
+        # Normalize agent name for filename matching (e.g., "Core Developer" -> "core_developer")
+        norm_name = agent_name.lower().replace(" ", "_")
+        
+        # Sort files to ensure stable prompt order
+        for skill_file in sorted(skills_dir.glob("*.md")):
+            fname = skill_file.stem.lower()
+            if fname in ["global", "common", norm_name]:
+                try:
+                    skill_text = skill_file.read_text(encoding="utf-8")
+                    skills_content.append(f"### SKILL: {skill_file.stem.upper()}\n{skill_text}")
+                except Exception as e:
+                    print(f"[{agent_name}] Warning: Failed to read skill {skill_file.name}: {e}")
+        
+        if skills_content:
+            combined_skills = "\n\n".join(skills_content)
+            context_str += f"\n\n--- 🛠️ ACTIVE SKILLS & PROTOCOLS ---\n{combined_skills}\n-----------------------------------"
+            print(f"[{agent_name}] Injected {len(skills_content)} skills from .harness/skills/")
+
     messages = [
         SystemMessage(content=sys_prompt),
         HumanMessage(content=context_str)
@@ -79,7 +102,28 @@ def run_agent_react_loop(
     
     while loop_count < max_loops:
         loop_count += 1
-        response = llm_with_tools.invoke(messages)
+        
+        # LLM Invoke with simple 429 retry
+        response = None
+        max_retries = 5
+        base_delay = 2
+        for attempt in range(max_retries):
+            try:
+                response = llm_with_tools.invoke(messages)
+                break
+            except Exception as e:
+                err_str = str(e).lower()
+                if "429" in err_str or "resource_exhausted" in err_str:
+                    wait_time = base_delay * (2 ** attempt)
+                    print(f"[{agent_name}] LLM Rate Limit (429) hit. Retrying in {wait_time}s... (Attempt {attempt+1}/{max_retries})")
+                    time.sleep(wait_time)
+                    continue
+                raise e # Re-raise if not a rate limit error
+        
+        if not response:
+            print(f"[{agent_name}] Max retries exceeded for LLM call.")
+            break
+            
         messages.append(response)
         
         # A. Log Thought

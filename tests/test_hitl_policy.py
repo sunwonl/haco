@@ -15,7 +15,8 @@ def test_hitl_points():
     # We check the 'interrupt_before' nodes in the compiled graph
     # LangGraph exposes this in the internal 'nodes' or 'interrupt_before' attribute
     # In recent versions, it's often in 'compiled_graph.interrupt_before'
-    interrupts = getattr(graph, "interrupt_before", [])
+    # LangGraph CompiledStateGraph exposes this as 'interrupt_before_nodes'
+    interrupts = getattr(graph, "interrupt_before_nodes", [])
     print(f"Nodes triggering interrupt: {interrupts}")
     
     assert "PO" not in interrupts

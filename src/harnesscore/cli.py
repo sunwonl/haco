@@ -449,7 +449,7 @@ def web(
 
     console.print(f"[bold]→[/] Starting HarnessCore API in [cyan]Web[/] mode on port {port}…")
     console.print(f"  [dim]✓ API Backend running at: http://localhost:{port}[/]")
-    uvicorn.run("harnesscore.web:app", host="0.0.0.0", port=port, reload=True)
+    uvicorn.run("harnesscore.web:app", host="0.0.0.0", port=port, reload=False)
 
 
 if __name__ == "__main__":

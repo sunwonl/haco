@@ -82,16 +82,28 @@ def stream_pipeline(thread_id: str, prompt: str = "", resume: str = "false"):
 
     def event_generator():
         try:
+            # Initial "Thinking" state for the first assignee (usually PO)
+            # This helps UI show immediate feedback
+            init_payload = {
+                "type": "node_update",
+                "node": "PO",
+                "status": "thinking",
+                "next_agent": None
+            }
+            yield f"data: {json.dumps(init_payload)}\n\n"
+
             for s in app_graph.stream(input_state, config_dict):
                 for node_name, node_state in s.items():
                     if isinstance(node_state, dict):
                         next_agent = node_state.get("next_agent", "UNKNOWN")
                         log_objects = node_state.get("history_logs", [])
                         tasks = node_state.get("tasks", {})
+                        file_changes = node_state.get("file_changes", [])
                     else:
                         next_agent = getattr(node_state, "next_agent", "UNKNOWN")
                         log_objects = getattr(node_state, "history_logs", [])
                         tasks = getattr(node_state, "tasks", {})
+                        file_changes = getattr(node_state, "file_changes", [])
 
                     logs = [
                         {
@@ -104,14 +116,27 @@ def stream_pipeline(thread_id: str, prompt: str = "", resume: str = "false"):
                         for log in log_objects
                     ]
 
+                    # Node finished -> Status: success
                     payload = {
                         "type": "node_update",
                         "node": node_name,
                         "next_agent": next_agent,
+                        "status": "success",
                         "logs": logs,
-                        "tasks": tasks
+                        "tasks": tasks,
+                        "file_changes": file_changes
                     }
                     yield f"data: {json.dumps(payload)}\n\n"
+
+                    # If there's a next agent and it's not FINISH/HUMAN, 
+                    # we can proactively set it to "thinking"
+                    if next_agent not in ["FINISH", "HUMAN", "UNKNOWN"]:
+                        think_payload = {
+                            "type": "node_update",
+                            "node": next_agent,
+                            "status": "thinking"
+                        }
+                        yield f"data: {json.dumps(think_payload)}\n\n"
 
                 # Check for HUMAN-IN-THE-LOOP interrupt
                 snapshot = app_graph.get_state(config_dict)
@@ -131,16 +156,9 @@ def stream_pipeline(thread_id: str, prompt: str = "", resume: str = "false"):
 
 
 # ─── API: HITL Interrupt Resume ──────────────────────────────────────────────
-@app.post("/api/interrupt/{thread_id}")
-async def resume_after_interrupt(thread_id: str, request: Request):
-    """Resume the graph after a Human-In-The-Loop pause.
-    
-    Body (optional):
-      { "feedback": "some correction" }   → injects updated user_prompt before resuming
-      {} or { "approve": true }           → simply resumes from checkpointed state
-    """
-    data = await request.json() if request.headers.get("content-length", "0") != "0" else {}
-    feedback = data.get("feedback", "")
+@app.get("/api/interrupt/{thread_id}")
+async def resume_after_interrupt(thread_id: str, feedback: str = ""):
+    """Resume the graph after a Human-In-The-Loop pause."""
 
     config = load_config()
     harness_dir = _harness_dir()
@@ -165,10 +183,12 @@ async def resume_after_interrupt(thread_id: str, request: Request):
                         next_agent = node_state.get("next_agent", "UNKNOWN")
                         log_objects = node_state.get("history_logs", [])
                         tasks = node_state.get("tasks", {})
+                        file_changes = node_state.get("file_changes", [])
                     else:
                         next_agent = getattr(node_state, "next_agent", "UNKNOWN")
                         log_objects = getattr(node_state, "history_logs", [])
                         tasks = getattr(node_state, "tasks", {})
+                        file_changes = getattr(node_state, "file_changes", [])
 
                     logs = [
                         {
@@ -181,7 +201,7 @@ async def resume_after_interrupt(thread_id: str, request: Request):
                         for log in log_objects
                     ]
 
-                    yield f"data: {json.dumps({'type': 'node_update', 'node': node_name, 'next_agent': next_agent, 'logs': logs, 'tasks': tasks})}\n\n"
+                    yield f"data: {json.dumps({'type': 'node_update', 'node': node_name, 'next_agent': next_agent, 'logs': logs, 'tasks': tasks, 'file_changes': file_changes})}\n\n"
 
                 snapshot = app_graph.get_state(config_dict)
                 if snapshot.next:
