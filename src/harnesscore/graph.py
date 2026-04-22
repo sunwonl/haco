@@ -52,23 +52,23 @@ def build_graph(config: HarnessConfig, checkpointer: Any = None):
     # 2. Add nodes (wrapping with the config payload trick if needed, 
     #    or using functools.partial. Since LangGraph standard is passing
     #    State directly, we can wrap our nodes to inject config).
-    def wrapped_po(state: SystemState):
-        return po_node(state, config)
+    async def wrapped_po(state: SystemState):
+        return await po_node(state, config)
 
-    def wrapped_sa(state: SystemState):
-        return sa_node(state, config)
+    async def wrapped_sa(state: SystemState):
+        return await sa_node(state, config)
 
-    def wrapped_cd(state: SystemState):
-        return cd_node(state, config)
+    async def wrapped_cd(state: SystemState):
+        return await cd_node(state, config)
 
-    def wrapped_qa(state: SystemState):
-        return qa_node(state, config)
+    async def wrapped_qa(state: SystemState):
+        return await qa_node(state, config)
 
-    def wrapped_ui(state: SystemState):
-        return ui_node(state, config)
+    async def wrapped_ui(state: SystemState):
+        return await ui_node(state, config)
 
-    def wrapped_dr(state: SystemState):
-        return dr_node(state, config)
+    async def wrapped_dr(state: SystemState):
+        return await dr_node(state, config)
 
     builder.add_node("PO", wrapped_po)
     builder.add_node("System Architect", wrapped_sa)

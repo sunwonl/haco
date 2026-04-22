@@ -19,6 +19,7 @@ export interface LogEntry {
     next_node?: string
     logs?: any[]
     message?: string
+    file_changes?: string[]
 }
 
 export interface FileEntry {
@@ -26,6 +27,35 @@ export interface FileEntry {
     path: string
     type: 'directory' | 'file'
     size?: number | null
+}
+
+export interface RuntimeStats {
+    system: {
+        cpu_percent: number
+        memory_mb: number
+        pid: number
+        uptime_sec: number
+    }
+    usage: {
+        input_tokens: number
+        output_tokens: number
+        thinking_tokens: number
+        total_tokens: number
+        estimated_cost_usd: number
+    }
+}
+
+export interface MemoryData {
+    memory: {
+        raw: string
+        sections: { header: string; content: string[] }[]
+    }
+    timeline: {
+        timestamp: string
+        role: string
+        type: string
+        content: string
+    }[]
 }
 
 interface HarnessState {
@@ -67,8 +97,27 @@ interface HarnessState {
     setFiles: (files: FileEntry[], path: string) => void
     setFileContent: (content: string | null) => void
 
+    // Runtime Stats (StatusBar)
+    runtimeStats: RuntimeStats | null
+    setRuntimeStats: (stats: RuntimeStats) => void
+
+    // Memory Data
+    memoryData: MemoryData | null
+    setMemoryData: (data: MemoryData) => void
+    fetchMemory: () => Promise<void>
+    indexMemory: () => Promise<void>
+
     // Process an SSE payload and fan it out to messages/logs/status
     dispatchSSE: (raw: any) => void
+
+    // HITL Details
+    interruptDetails: { sender?: string, receiver?: string, content?: string } | null
+    setInterruptDetails: (details: { sender?: string, receiver?: string, content?: string } | null) => void
+
+    // Streaming support
+    streamingMessageId: string | null
+    appendStreamingContent: (chunk: string, category?: MessageCategory, agent?: string) => void
+    finishStreaming: () => void
 }
 
 let _msgCounter = 0
@@ -112,26 +161,91 @@ export const useHarnessStore = create<HarnessState>((set, get) => ({
     setFiles: (files, path) => set({ files, currentFilePath: path }),
     setFileContent: (content) => set({ fileContent: content }),
 
+    runtimeStats: null,
+    setRuntimeStats: (stats) => set({ runtimeStats: stats }),
+
+    memoryData: null,
+    setMemoryData: (data) => set({ memoryData: data }),
+
+    interruptDetails: null,
+    setInterruptDetails: (details) => set({ interruptDetails: details }),
+
+    streamingMessageId: null,
+    appendStreamingContent: (chunk, category = 'Message', agent) => {
+        const { streamingMessageId, messages } = get()
+        if (!streamingMessageId) {
+            const newId = mkId()
+            set({
+                streamingMessageId: newId,
+                messages: [...messages, { id: newId, role: 'assistant', category, agent, text: chunk }]
+            })
+        } else {
+            set({
+                messages: messages.map(m => m.id === streamingMessageId ? { ...m, text: m.text + chunk, category, agent: agent || m.agent } : m)
+            })
+        }
+    },
+    finishStreaming: () => set({ streamingMessageId: null }),
+
+    fetchMemory: async () => {
+        try {
+            const res = await fetch('/api/memory')
+            if (res.ok) {
+                const data = await res.json()
+                set({ memoryData: data })
+            }
+        } catch (e) {
+            console.error('Failed to fetch memory:', e)
+        }
+    },
+
+    indexMemory: async () => {
+        try {
+            const res = await fetch('/api/memory/index', { method: 'POST' })
+            if (res.ok) {
+                const data = await res.json()
+                get().addMessage({
+                    id: mkId(),
+                    role: 'assistant',
+                    category: 'System',
+                    text: `✅ ${data.message}`
+                })
+                get().fetchMemory()
+            }
+        } catch (e) {
+            console.error('Failed to index memory:', e)
+        }
+    },
+
     // The central SSE dispatcher: parse backend payloads and route them to the correct state slices
     dispatchSSE: (raw: any) => {
-        const { addMessage, addLog, setAgentStatus, updateNodeStatus, setRouting } = get()
+        const { addMessage, addLog, setAgentStatus, updateNodeStatus, setRouting, setInterruptDetails, appendStreamingContent, finishStreaming, activeNode } = get()
 
         if (raw.type === 'finish') {
+            finishStreaming()
             setAgentStatus(null, false, false, null)
-            set({ nodeStatuses: {}, routingEdge: null })
+            set({ nodeStatuses: {}, routingEdge: null, interruptDetails: null })
             addLog({ type: 'finish' })
             return
         }
 
         if (raw.type === 'error') {
+            finishStreaming()
             setAgentStatus(null, false, false, null)
+            set({ interruptDetails: null })
             addLog({ type: 'error', message: raw.message || raw.code || 'Unknown error' })
             addMessage({ id: mkId(), role: 'assistant', category: 'System', text: `❌ Error: ${raw.message || raw.code}` })
             return
         }
 
         if (raw.type === 'interrupt') {
+            finishStreaming()
             setAgentStatus(null, false, true, raw.next_node ?? null)
+            setInterruptDetails({
+                sender: raw.sender,
+                receiver: raw.next_node,
+                content: raw.content
+            })
             addLog({ type: 'interrupt', next_node: raw.next_node })
             addMessage({
                 id: mkId(), role: 'assistant', category: 'Interrupt',
@@ -140,7 +254,14 @@ export const useHarnessStore = create<HarnessState>((set, get) => ({
             return
         }
 
+        if (raw.type === 'content_delta') {
+            const category = raw.category || 'Message'
+            appendStreamingContent(raw.content, category, activeNode || undefined)
+            return
+        }
+
         if (raw.type === 'node_update') {
+            finishStreaming()
             const node = raw.node ?? ''
             const status = (raw.status as any) || 'thinking'
             const nextAgent = raw.next_agent ?? null

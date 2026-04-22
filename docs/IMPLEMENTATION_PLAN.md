@@ -1,6 +1,7 @@
 # HarnessCore 구현 계획 (Implementation Roadmap)
 
-> 마지막 업데이트: 2026-04-20
+> 마지막 업데이트: 2026-04-22
+> **핵심 철학: CLI-Web Parity** - 모든 신규 기능은 엔진 코어 로직으로 구현되어 Web UI와 CLI(REPL) 양측에 동일하게 노출되어야 함.
 
 ---
 
@@ -75,10 +76,22 @@
 | `config` | `.harness/settings.json` 설정 뷰어/에디터 |
 | `docs` | `.harness/memory.md` + `timeline.md` 뷰어 |
 
-### WEB-03: StatusBar 실시간 연동
-- [ ] 현재 실행 중인 노드 이름 표시 (현재 정적 텍스트)
-- [ ] 전체 토큰 사용량 누적 표시
-- [ ] 마지막 완료 시각 표시
+### WEB-03 / CLI-03: Runtime 모니터링 (StatusBar 실시간 연동)
+- **Shared Core**: 토큰 사용량 계산기 및 시스템 리소스(CPU/Mem) 프로파일러
+- **Web UI**: 하단 StatusBar에 실시간 텍스트 및 그래프 표시
+- **CLI (REPL)**: `/runtime` 명령어 추가하여 현재 세션 리포트 출력 
+- **구현 대상**:
+  - [ ] 현재 실행 중인 노드 이름 표시
+  - [ ] 전체 토큰 사용량 누적 및 예상 비용 표시
+  - [ ] 마지막 완료 시각 및 실행 소요 시간(Latency) 표시
+
+### WEB-06 / CLI-06: Memory & Knowledge Explorer
+- **Shared Core**: `memory.md` 파서 및 세션별 `journal.jsonl` 통합 뷰어 로직
+- **Web UI**: GNB 'Memory' 탭 구현 (타임라인 또는 마인드맵 시각화)
+- **CLI (REPL)**: `/memory` 명령어 추가하여 주요 지식 및 결정 사항 요약 출력
+- **구현 대상**:
+  - [ ] `memory.md` 컨텐츠의 구조적 조회 API
+  - [ ] 세션별 주요 'Decision' 추출 및 이력 브라우징
 
 ### WEB-05: Artifact/Diff 뷰
 - [ ] 에이전트가 생성한 출력물(Artifact)을 별도 창으로 확인

@@ -17,6 +17,8 @@ from rich.panel import Panel
 from rich.text import Text
 
 from harnesscore.config.loader import load_config
+from harnesscore.utils.runtime import RuntimeProfiler
+from harnesscore.utils.memory_viewer import MemoryViewer
 
 load_dotenv()
 
@@ -220,7 +222,7 @@ def chat(
     
     # Prompt Toolkit Setup
     from prompt_toolkit.completion import WordCompleter
-    slash_completer = WordCompleter(['/help', '/reset', '/quit', '/exit'], ignore_case=True)
+    slash_completer = WordCompleter(['/help', '/runtime', '/memory', '/reset', '/quit', '/exit'], ignore_case=True)
     
     session = PromptSession(history=InMemoryHistory(), completer=slash_completer)
     style = Style.from_dict({
@@ -242,6 +244,28 @@ def chat(
                 cmd = user_input.lower()
                 if cmd in ["/quit", "/exit"]:
                     break
+                elif cmd == "/help":
+                    help_text = [
+                        "[bold cyan]Available Commands:[/]",
+                        "  [bold]/runtime[/] - View current session's token usage and system stats",
+                        "  [bold]/memory[/]  - View project context (memory.md) and key events",
+                        "  [bold]/reset[/]   - Start a fresh session (new thread ID)",
+                        "  [bold]/help[/]    - Show this help message",
+                        "  [bold]/quit[/]    - Exit the REPL"
+                    ]
+                    console.print(Panel("\n".join(help_text), border_style="cyan"))
+                    continue
+                elif cmd == "/runtime":
+                    # Get current state from checkpointer
+                    current_state = checkpointer.get(config_dict) or SystemState()
+                    report = RuntimeProfiler.format_cli_report(current_state)
+                    console.print(Panel(report, border_style="green", expand=False))
+                    continue
+                elif cmd == "/memory":
+                    h_dir = checkpointer.harness_dir
+                    report = MemoryViewer.format_cli_memory(h_dir.parent)
+                    console.print(Panel(report, border_style="magenta", expand=False))
+                    continue
                 elif cmd == "/reset":
                     thread_id = str(uuid.uuid4())
                     config_dict["configurable"]["thread_id"] = thread_id

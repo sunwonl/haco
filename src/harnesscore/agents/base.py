@@ -5,6 +5,8 @@ Provides a unified pattern for executing tools and persisting conversational jou
 import json
 import uuid
 import time
+import sys
+import traceback
 from pathlib import Path
 from typing import List, Callable, Dict, Any
 from datetime import datetime, timezone
@@ -13,6 +15,9 @@ from langchain_core.language_models.chat_models import BaseChatModel
 
 from harnesscore.schema import SystemState, JournalEntry, TokenUsage, TaskLog
 from harnesscore.utils.journaler import Journaler
+from harnesscore.utils.vector_store import LocalVectorStore
+from harnesscore.config.loader import load_config
+import asyncio
 
 def _ts():
     return datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
@@ -27,7 +32,7 @@ def _extract_tokens(response) -> TokenUsage:
         thinking_tokens=meta.get("thinking_tokens", 0)
     )
 
-def run_agent_react_loop(
+async def run_agent_react_loop(
     agent_name: str,
     state: SystemState,
     llm: BaseChatModel,
@@ -55,11 +60,39 @@ def run_agent_react_loop(
         chat_history_str = "\n".join(recent_chat)
         context_str += f"\n\n--- Recent Conversation History ---\n{chat_history_str}"
 
-    # Inject Global Semantic Memory if exists
+    # Inject Global Semantic Memory if exists (Hybrid: Full or RAG-based)
     mem_file = harness_dir / "memory.md"
     if mem_file.exists() and mem_file.stat().st_size > 0:
-        global_memory_str = mem_file.read_text(encoding="utf-8")
-        context_str += f"\n\n--- 🧠 GLOBAL LONG-TERM MEMORY ---\n{global_memory_str}\n--------------------------------"
+        file_size = mem_file.stat().st_size
+        # If the memory file is small (< 5KB), inject full content
+        # Otherwise, perform vector search to keep context lean
+        if file_size < 5000:
+            global_memory_str = mem_file.read_text(encoding="utf-8")
+            context_str += f"\n\n--- 🧠 GLOBAL LONG-TERM MEMORY ---\n{global_memory_str}\n--------------------------------"
+        else:
+            try:
+                config = load_config()
+                api_key = config.resolve_api_key()
+                store = LocalVectorStore(
+                    storage_dir=str(harness_dir / "vectors"),
+                    api_key=api_key
+                )
+                
+                # Use sync version to avoid event loop conflicts in sync nodes
+                search_results = store.similarity_search_sync(context_str, k=5)
+                
+                if search_results:
+                    rag_memory = "\n\n".join([f"[Relevance Score: {r['score']:.2f}]\n{r['text']}" for r in search_results])
+                    context_str += f"\n\n--- 🧠 RELEVANT PROJECT MEMORY (RAG) ---\n{rag_memory}\n--------------------------------------"
+                    print(f"[{agent_name}] Injected {len(search_results)} relevant chunks via RAG")
+                else:
+                    # Fallback to full if RAG is empty (index not built yet)
+                    global_memory_str = mem_file.read_text(encoding="utf-8")
+                    context_str += f"\n\n--- 🧠 GLOBAL LONG-TERM MEMORY (Fallback) ---\n{global_memory_str}\n--------------------------------"
+            except Exception as e:
+                print(f"[{agent_name}] Warning: RAG Retrieval failed, falling back to full memory. ({e})")
+                global_memory_str = mem_file.read_text(encoding="utf-8")
+                context_str += f"\n\n--- 🧠 GLOBAL LONG-TERM MEMORY (Error Fallback) ---\n{global_memory_str}\n--------------------------------"
 
     # Inject Active Skills & Protocols
     skills_dir = harness_dir / "skills"
@@ -83,8 +116,12 @@ def run_agent_react_loop(
             context_str += f"\n\n--- 🛠️ ACTIVE SKILLS & PROTOCOLS ---\n{combined_skills}\n-----------------------------------"
             print(f"[{agent_name}] Injected {len(skills_content)} skills from .harness/skills/")
 
+    # Force Korean response in the system prompt
+    kor_enforcement = "\n\nCRITICAL: Always respond in Korean (한국어). Use professional and polite language."
+    full_sys_prompt = sys_prompt + kor_enforcement
+
     messages = [
-        SystemMessage(content=sys_prompt),
+        SystemMessage(content=full_sys_prompt),
         HumanMessage(content=context_str)
     ]
     
@@ -97,6 +134,7 @@ def run_agent_react_loop(
     
     loop_count = 0
     route_called = False
+    loop_tokens = TokenUsage()
     
     print(f"[{agent_name}] Starting Conversational Loop...")
     
@@ -109,14 +147,23 @@ def run_agent_react_loop(
         base_delay = 2
         for attempt in range(max_retries):
             try:
-                response = llm_with_tools.invoke(messages)
+                # Use astream for real-time tracking if caller uses astream_events
+                full_response = None
+                async for chunk in llm_with_tools.astream(messages):
+                    if full_response is None:
+                        full_response = chunk
+                    else:
+                        full_response += chunk
+                response = full_response
+                loop_tokens += _extract_tokens(response)
                 break
             except Exception as e:
+                print(f"[{agent_name}] Error invoking LLM (Attempt {attempt+1}/{max_retries}): {e}", file=sys.stderr)
                 err_str = str(e).lower()
                 if "429" in err_str or "resource_exhausted" in err_str:
                     wait_time = base_delay * (2 ** attempt)
                     print(f"[{agent_name}] LLM Rate Limit (429) hit. Retrying in {wait_time}s... (Attempt {attempt+1}/{max_retries})")
-                    time.sleep(wait_time)
+                    await asyncio.sleep(wait_time)
                     continue
                 raise e # Re-raise if not a rate limit error
         
@@ -263,5 +310,6 @@ def run_agent_react_loop(
         "tasks": updated_tasks,
         "completed_tasks": updated_completed,
         "journal": new_journals,
-        "history_logs": [log]
+        "history_logs": [log],
+        "total_tokens": loop_tokens
     }

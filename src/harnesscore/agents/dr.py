@@ -44,7 +44,7 @@ DRDecision.model_rebuild()
 from harnesscore.agents.base import run_agent_react_loop
 from harnesscore.tools.journal import JournalTool
 
-def dr_node(state: SystemState, config: HarnessConfig) -> dict:
+async def dr_node(state: SystemState, config: HarnessConfig) -> dict:
     """LangGraph node execution for the Design Reviewer."""
     project_root = Path(config.project_root or ".")
     harness_dir = project_root / ".harness"
@@ -98,7 +98,7 @@ def dr_node(state: SystemState, config: HarnessConfig) -> dict:
         f"User Prompt: {state.user_prompt}\n"
     )
 
-    result = run_agent_react_loop(
+    result = await run_agent_react_loop(
         agent_name="Design Reviewer", state=state, llm=llm, tools=tools, 
         sys_prompt=sys_prompt, context_str=context_str, harness_dir=harness_dir, max_loops=10
     )

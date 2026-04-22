@@ -107,6 +107,33 @@ export function useHarnessEngine() {
         } catch { /* ignore */ }
     }
 
+    const fetchMemory = async () => {
+        try {
+            const res = await fetch(`${BASE}/api/memory`)
+            if (!res.ok) return
+            const data = await res.json()
+            store.setMemoryData(data)
+        } catch { /* ignore */ }
+    }
+
+    const fetchRuntimeStats = async () => {
+        if (!store.threadId) return
+        try {
+            const res = await fetch(`${BASE}/api/runtime/${store.threadId}`)
+            if (!res.ok) return
+            const data = await res.json()
+            store.setRuntimeStats(data)
+        } catch { /* ignore */ }
+    }
+
+    // Runtime polling: every 3s when thread exists
+    useEffect(() => {
+        if (!store.threadId) return
+        fetchRuntimeStats()
+        const interval = setInterval(fetchRuntimeStats, 3000)
+        return () => clearInterval(interval)
+    }, [store.threadId])
+
     useEffect(() => {
         return () => { if (esRef.current) esRef.current.close() }
     }, [])
@@ -118,5 +145,6 @@ export function useHarnessEngine() {
         fetchFiles,
         fetchFileContent,
         restoreState,
+        fetchMemory,
     }
 }

@@ -18,46 +18,42 @@ export default function LogPanel({ logs }: { logs: any[] }) {
     return (
         <div className="flex-1 bg-surface-container-lowest flex flex-col relative z-20 shrink-0 min-w-0 h-full">
             {/* Editor Tabs */}
-            <div className="h-10 bg-surface-container-low flex items-center px-4 gap-1 border-b border-ghost-border/15 shrink-0 overflow-x-auto no-scrollbar">
+            <div className="h-9 bg-surface-container-low flex items-center px-2 gap-0.5 border-b border-ghost-border/15 shrink-0 overflow-x-auto no-scrollbar">
                 <button
                     onClick={() => setActiveSubTab('logs')}
-                    className={`h-full px-3 flex items-center gap-2 transition-all cursor-pointer shrink-0 ${activeSubTab === 'logs'
-                        ? 'border-t-[3px] border-primary bg-surface-container-lowest -mb-[1px]'
+                    className={`h-full px-2 flex items-center transition-all cursor-pointer shrink-0 ${activeSubTab === 'logs'
+                        ? 'border-t-[2px] border-primary bg-surface-container-lowest -mb-[1px]'
                         : 'text-on-surface-variant opacity-60 hover:opacity-100'
                         }`}
                 >
-                    <span className={`material-symbols-outlined text-[1rem] ${activeSubTab === 'logs' ? 'text-primary' : ''}`}>terminal</span>
-                    <span className={`text-[10px] font-bold tracking-widest uppercase ${activeSubTab === 'logs' ? 'text-on-surface' : ''}`}>Logs</span>
+                    <span className={`text-[9px] font-bold tracking-widest uppercase ${activeSubTab === 'logs' ? 'text-on-surface' : ''}`}>Logs</span>
                 </button>
 
                 <button
                     onClick={() => setActiveSubTab('graph')}
-                    className={`h-full px-3 flex items-center gap-2 transition-all cursor-pointer shrink-0 ${activeSubTab === 'graph'
-                        ? 'border-t-[3px] border-primary bg-surface-container-lowest -mb-[1px]'
+                    className={`h-full px-2 flex items-center transition-all cursor-pointer shrink-0 ${activeSubTab === 'graph'
+                        ? 'border-t-[2px] border-primary bg-surface-container-lowest -mb-[1px]'
                         : 'text-on-surface-variant opacity-60 hover:opacity-100'
                         }`}
                 >
-                    <span className={`material-symbols-outlined text-[1rem] ${activeSubTab === 'graph' ? 'text-primary' : ''}`}>account_tree</span>
-                    <span className={`text-[10px] font-bold tracking-widest uppercase ${activeSubTab === 'graph' ? 'text-on-surface' : ''}`}>State Graph</span>
+                    <span className={`text-[9px] font-bold tracking-widest uppercase ${activeSubTab === 'graph' ? 'text-on-surface' : ''}`}>Graph</span>
                 </button>
 
                 <button
                     onClick={() => setActiveSubTab('changes')}
-                    className={`h-full px-3 flex items-center gap-2 transition-all cursor-pointer shrink-0 ${activeSubTab === 'changes'
-                        ? 'border-t-[3px] border-primary bg-surface-container-lowest -mb-[1px]'
+                    className={`h-full px-2 flex items-center transition-all cursor-pointer shrink-0 ${activeSubTab === 'changes'
+                        ? 'border-t-[2px] border-primary bg-surface-container-lowest -mb-[1px]'
                         : 'text-on-surface-variant opacity-60 hover:opacity-100'
                         }`}
                 >
-                    <span className={`material-symbols-outlined text-[1rem] ${activeSubTab === 'changes' ? 'text-primary' : ''}`}>history_edits</span>
-                    <span className={`text-[10px] font-bold tracking-widest uppercase ${activeSubTab === 'changes' ? 'text-on-surface' : ''}`}>Changes</span>
+                    <span className={`text-[9px] font-bold tracking-widest uppercase ${activeSubTab === 'changes' ? 'text-on-surface' : ''}`}>Diff</span>
                     {fileChanges.length > 0 && (
-                        <span className="bg-primary text-on-primary text-[9px] px-1.5 rounded-full min-w-[14px] text-center font-bold ml-1">{fileChanges.length}</span>
+                        <span className="bg-primary text-on-primary text-[8px] px-1 rounded-full min-w-[12px] text-center font-bold ml-1">{fileChanges.length}</span>
                     )}
                 </button>
 
-                <div className="ml-auto flex items-center gap-2 shrink-0 pl-2">
-                    <span className="px-2 py-0.5 bg-secondary/10 text-secondary text-[9px] font-bold rounded border border-secondary/20 uppercase tracking-widest">Live</span>
-                    <span className="material-symbols-outlined text-outline hover:text-on-surface cursor-pointer text-[1.125rem]">more_vert</span>
+                <div className="ml-auto flex items-center gap-1 shrink-0 pl-1">
+                    <span className="material-symbols-outlined text-outline hover:text-on-surface cursor-pointer text-[1rem]">more_vert</span>
                 </div>
             </div>
 

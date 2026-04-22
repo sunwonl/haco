@@ -9,7 +9,24 @@ from pydantic import BaseModel, Field
 class TokenUsage(BaseModel):
     """Tracking token consumption for an LLM call."""
     input_tokens: int = 0
+    output_tokens: int = 0
     thinking_tokens: int = 0
+
+    def __add__(self, other: Any) -> "TokenUsage":
+        if isinstance(other, dict):
+            other = TokenUsage(**other)
+        if not isinstance(other, TokenUsage):
+            return self
+        return TokenUsage(
+            input_tokens=self.input_tokens + other.input_tokens,
+            output_tokens=self.output_tokens + other.output_tokens,
+            thinking_tokens=self.thinking_tokens + other.thinking_tokens
+        )
+
+    def __radd__(self, other: Any) -> "TokenUsage":
+        # Handle dict + TokenUsage (LangGraph reduce fallback)
+        return self.__add__(other)
+
 
 class TaskLog(BaseModel):
     """Legacy log entry: A single log entry from an agent action."""
@@ -63,7 +80,7 @@ class SystemState(BaseModel):
         default_factory=list,
         description="Legacy full execution log of all agent actions",
     )
-    total_tokens: TokenUsage = Field(
+    total_tokens: Annotated[TokenUsage, operator.add] = Field(
         default_factory=TokenUsage,
         description="Accumulated token usage across the entire project"
     )

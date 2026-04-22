@@ -1,7 +1,11 @@
 import json
 import os
+import logging
+import sys
+import traceback
 import uuid
 from pathlib import Path
+from typing import List, Optional
 
 from fastapi import FastAPI, Request
 from fastapi.responses import StreamingResponse, FileResponse, JSONResponse
@@ -12,8 +16,19 @@ from harnesscore.graph import build_graph
 from harnesscore.checkpointer.file_checkpointer import FileCheckpointer
 from harnesscore.config.loader import load_config
 from harnesscore.schema import SystemState
+from harnesscore.utils.runtime import RuntimeProfiler
+from harnesscore.utils.memory_viewer import MemoryViewer
+from harnesscore.utils.vector_store import LocalVectorStore
 
 app = FastAPI()
+
+# Configure logging to write to stderr for easier debugging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s [%(levelname)s] %(name)s: %(message)s',
+    stream=sys.stderr
+)
+logger = logging.getLogger("harnesscore.web")
 
 app.add_middleware(
     CORSMiddleware,
@@ -35,6 +50,22 @@ if _frontend_dist.exists():
 def _harness_dir() -> Path:
     """Use the directory where `harness web` was invoked (CWD) as the project root."""
     return Path(os.getcwd()) / ".harness"
+
+
+def _get_handoff_content(snapshot) -> str:
+    """Extract the actual request content from the last agent in the history logs."""
+    history = snapshot.values.get("history_logs", [])
+    if not history:
+        return snapshot.values.get("user_prompt", "")
+    
+    last_log = history[-1]
+    msg = ""
+    if isinstance(last_log, dict):
+        msg = last_log.get("details", "")
+    else:
+        msg = getattr(last_log, "details", "")
+    
+    return msg if msg else snapshot.values.get("user_prompt", "")
 
 
 # ─── API: Health Check ────────────────────────────────────────────────────────
@@ -80,10 +111,9 @@ def stream_pipeline(thread_id: str, prompt: str = "", resume: str = "false"):
         existing_state = app_graph.get_state(config_dict)
         input_state = SystemState(user_prompt=prompt) if not existing_state.values else {"user_prompt": prompt}
 
-    def event_generator():
+    async def event_generator():
         try:
             # Initial "Thinking" state for the first assignee (usually PO)
-            # This helps UI show immediate feedback
             init_payload = {
                 "type": "node_update",
                 "node": "PO",
@@ -92,18 +122,27 @@ def stream_pipeline(thread_id: str, prompt: str = "", resume: str = "false"):
             }
             yield f"data: {json.dumps(init_payload)}\n\n"
 
-            for s in app_graph.stream(input_state, config_dict):
-                for node_name, node_state in s.items():
-                    if isinstance(node_state, dict):
-                        next_agent = node_state.get("next_agent", "UNKNOWN")
-                        log_objects = node_state.get("history_logs", [])
-                        tasks = node_state.get("tasks", {})
-                        file_changes = node_state.get("file_changes", [])
-                    else:
-                        next_agent = getattr(node_state, "next_agent", "UNKNOWN")
-                        log_objects = getattr(node_state, "history_logs", [])
-                        tasks = getattr(node_state, "tasks", {})
-                        file_changes = getattr(node_state, "file_changes", [])
+            async for event in app_graph.astream_events(input_state, config_dict, version="v2"):
+                kind = event["event"]
+                
+                # A. Handle Real-time Content Streaming
+                if kind == "on_chat_model_stream":
+                    chunk = event["data"]["chunk"]
+                    if hasattr(chunk, "content") and chunk.content:
+                        payload = {"type": "content_delta", "content": chunk.content}
+                        yield f"data: {json.dumps(payload)}\n\n"
+
+                # B. Handle Node Completion (State Updates)
+                elif kind == "on_chain_end" and event["name"] in ["PO", "System Architect", "Core Developer", "QA Evaluator", "UI Engineer", "Design Reviewer"]:
+                    node_name = event["name"]
+                    node_state = event["data"]["output"]
+                    if not node_state or not isinstance(node_state, dict):
+                        continue
+                    
+                    next_agent = node_state.get("next_agent", "UNKNOWN")
+                    log_objects = node_state.get("history_logs", [])
+                    tasks = node_state.get("tasks", {})
+                    file_changes = node_state.get("file_changes", [])
 
                     logs = [
                         {
@@ -128,8 +167,7 @@ def stream_pipeline(thread_id: str, prompt: str = "", resume: str = "false"):
                     }
                     yield f"data: {json.dumps(payload)}\n\n"
 
-                    # If there's a next agent and it's not FINISH/HUMAN, 
-                    # we can proactively set it to "thinking"
+                    # If there's a next agent and it's not FINISH/HUMAN, proactively set it to "thinking"
                     if next_agent not in ["FINISH", "HUMAN", "UNKNOWN"]:
                         think_payload = {
                             "type": "node_update",
@@ -138,18 +176,21 @@ def stream_pipeline(thread_id: str, prompt: str = "", resume: str = "false"):
                         }
                         yield f"data: {json.dumps(think_payload)}\n\n"
 
-                # Check for HUMAN-IN-THE-LOOP interrupt
-                snapshot = app_graph.get_state(config_dict)
-                if snapshot.next:
-                    hitl_payload = {
-                        "type": "interrupt",
-                        "next_node": snapshot.next[0],
-                    }
-                    yield f"data: {json.dumps(hitl_payload)}\n\n"
-                    return  # Stop streaming; client must POST /api/interrupt to resume
+            # Final snapshot for potential interrupts
+            snapshot = app_graph.get_state(config_dict)
+            if snapshot.next:
+                hitl_payload = {
+                    "type": "interrupt",
+                    "next_node": snapshot.next[0],
+                    "sender": snapshot.values.get("current_assignee", "PO"),
+                    "content": _get_handoff_content(snapshot)
+                }
+                yield f"data: {json.dumps(hitl_payload)}\n\n"
+                return
 
             yield f"data: {json.dumps({'type': 'finish'})}\n\n"
         except Exception as e:
+            traceback.print_exc()
             yield f"data: {json.dumps({'type': 'error', 'message': str(e)})}\n\n"
 
     return StreamingResponse(event_generator(), media_type="text/event-stream")
@@ -175,20 +216,27 @@ async def resume_after_interrupt(thread_id: str, feedback: str = ""):
         app_graph.update_state(config_dict, {"user_prompt": feedback})
 
     # Resume the graph from checkpoint (input=None signals continuation)
-    def resume_generator():
+    async def resume_generator():
         try:
-            for s in app_graph.stream(None, config_dict):
-                for node_name, node_state in s.items():
-                    if isinstance(node_state, dict):
-                        next_agent = node_state.get("next_agent", "UNKNOWN")
-                        log_objects = node_state.get("history_logs", [])
-                        tasks = node_state.get("tasks", {})
-                        file_changes = node_state.get("file_changes", [])
-                    else:
-                        next_agent = getattr(node_state, "next_agent", "UNKNOWN")
-                        log_objects = getattr(node_state, "history_logs", [])
-                        tasks = getattr(node_state, "tasks", {})
-                        file_changes = getattr(node_state, "file_changes", [])
+            async for event in app_graph.astream_events(None, config_dict, version="v2"):
+                kind = event["event"]
+                
+                if kind == "on_chat_model_stream":
+                    chunk = event["data"]["chunk"]
+                    if hasattr(chunk, "content") and chunk.content:
+                        payload = {"type": "content_delta", "content": chunk.content}
+                        yield f"data: {json.dumps(payload)}\n\n"
+
+                elif kind == "on_chain_end" and event["name"] in ["PO", "System Architect", "Core Developer", "QA Evaluator", "UI Engineer", "Design Reviewer"]:
+                    node_name = event["name"]
+                    node_state = event["data"]["output"]
+                    if not node_state or not isinstance(node_state, dict):
+                        continue
+                        
+                    next_agent = node_state.get("next_agent", "UNKNOWN")
+                    log_objects = node_state.get("history_logs", [])
+                    tasks = node_state.get("tasks", {})
+                    file_changes = node_state.get("file_changes", [])
 
                     logs = [
                         {
@@ -203,13 +251,20 @@ async def resume_after_interrupt(thread_id: str, feedback: str = ""):
 
                     yield f"data: {json.dumps({'type': 'node_update', 'node': node_name, 'next_agent': next_agent, 'logs': logs, 'tasks': tasks, 'file_changes': file_changes})}\n\n"
 
-                snapshot = app_graph.get_state(config_dict)
-                if snapshot.next:
-                    yield f"data: {json.dumps({'type': 'interrupt', 'next_node': snapshot.next[0]})}\n\n"
-                    return
+            snapshot = app_graph.get_state(config_dict)
+            if snapshot.next:
+                hitl_payload = {
+                    "type": "interrupt",
+                    "next_node": snapshot.next[0],
+                    "sender": snapshot.values.get("current_assignee", "PO"),
+                    "content": _get_handoff_content(snapshot)
+                }
+                yield f"data: {json.dumps(hitl_payload)}\n\n"
+                return
 
             yield f"data: {json.dumps({'type': 'finish'})}\n\n"
         except Exception as e:
+            traceback.print_exc()
             yield f"data: {json.dumps({'type': 'error', 'message': str(e)})}\n\n"
 
     return StreamingResponse(resume_generator(), media_type="text/event-stream")
@@ -309,6 +364,73 @@ def get_state(thread_id: str):
         }
     except Exception as e:
         return JSONResponse(status_code=500, content={"detail": str(e)})
+
+# ─── API: Runtime Stats ──────────────────────────────────────────────────────
+@app.get("/api/runtime/{thread_id}")
+async def get_runtime_stats(thread_id: str):
+    """Returns detailed runtime and token stats for a specific thread."""
+    config = load_config()
+    harness_dir = _harness_dir()
+    checkpointer = FileCheckpointer(harness_dir)
+    app_graph = build_graph(config, checkpointer)
+
+    config_dict = {"configurable": {"thread_id": thread_id}}
+    state = app_graph.get_state(config_dict).values
+    
+    # Fallback to empty state if not found
+    if not state:
+        state = SystemState()
+    else:
+        # If it's a dict from checkpoint, parse it
+        if isinstance(state, dict):
+            state = SystemState(**state)
+
+    return {
+        "system": RuntimeProfiler.get_system_stats(),
+        "usage": RuntimeProfiler.get_token_summary(state)
+    }
+
+
+# ─── API: Memory & Knowledge ────────────────────────────────────────────────
+@app.get("/api/memory")
+async def get_memory():
+    """Returns project memory content and session timeline."""
+    h_dir = _harness_dir()
+    project_root = h_dir.parent
+    return {
+        "memory": MemoryViewer.get_memory_content(str(project_root)),
+        "timeline": MemoryViewer.get_session_timeline(str(h_dir))
+    }
+
+@app.post("/api/memory/index")
+async def index_memory():
+    """Indexes memory.md sections into the local vector store."""
+    try:
+        from harnesscore.config import HarnessConfig
+        config = HarnessConfig.load()
+        h_dir = _harness_dir()
+        project_root = h_dir.parent
+        
+        chunks = MemoryViewer.get_memory_chunks(str(project_root))
+        if not chunks:
+            return {"status": "success", "message": "No knowledge found to index."}
+            
+        store = LocalVectorStore(
+            storage_dir=os.path.join(str(project_root), ".harness", "vectors"),
+            api_key=config.google_api_key
+        )
+        
+        # Clear old and add new
+        store.clear()
+        texts = [c["text"] for c in chunks]
+        metadatas = [c["metadata"] for c in chunks]
+        await store.add_texts(texts, metadatas)
+        
+        return {"status": "success", "message": f"Indexed {len(chunks)} knowledge chunks."}
+    except Exception as e:
+        import traceback
+        print(traceback.format_exc())
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 # ─── SPA Catch-All (must be last) ────────────────────────────────────────────

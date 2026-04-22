@@ -81,7 +81,7 @@ def _gather_codebase_context(
 from harnesscore.agents.base import run_agent_react_loop
 from harnesscore.tools.journal import JournalTool
 
-def sa_node(state: SystemState, config: HarnessConfig) -> dict:
+async def sa_node(state: SystemState, config: HarnessConfig) -> dict:
     """LangGraph node execution for the System Architect."""
     project_root = Path(config.project_root or ".")
     harness_dir = project_root / ".harness"
@@ -134,7 +134,7 @@ def sa_node(state: SystemState, config: HarnessConfig) -> dict:
         f"Already Completed Tasks: {json.dumps(state.completed_tasks, ensure_ascii=False)}\n"
     )
 
-    return run_agent_react_loop(
+    return await run_agent_react_loop(
         agent_name="System Architect", state=state, llm=llm, tools=tools, 
         sys_prompt=sys_prompt, context_str=context_str, harness_dir=harness_dir, max_loops=10
     )

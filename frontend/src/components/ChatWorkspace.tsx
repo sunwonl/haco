@@ -1,14 +1,33 @@
 import { useEffect, useRef } from 'react';
+import { useHarnessStore } from '../store/useHarnessStore';
 
-type Message = { id: string, role: 'user' | 'assistant', text: string, intent?: string };
+type Message = { id: string, role: 'user' | 'assistant', text: string, intent?: string, category?: string, agent?: string };
+
+const AGENT_CONFIG: Record<string, { label: string, color: string, bg: string, border: string, icon: string }> = {
+    'PO': { label: 'Product Owner', color: 'text-blue-500', bg: 'bg-blue-500/20', border: 'border-blue-500', icon: 'description' },
+    'SA': { label: 'Software Architect', color: 'text-purple-500', bg: 'bg-purple-500/20', border: 'border-purple-500', icon: 'architecture' },
+    'CD': { label: 'Core Developer', color: 'text-emerald-500', bg: 'bg-emerald-500/20', border: 'border-emerald-500', icon: 'code' },
+    'DR': { label: 'Design Reviewer', color: 'text-amber-500', bg: 'bg-amber-500/20', border: 'border-amber-500', icon: 'palette' },
+    'QA': { label: 'Quality Assurance', color: 'text-rose-500', bg: 'bg-rose-500/20', border: 'border-rose-500', icon: 'fact_check' },
+    'System': { label: 'System', color: 'text-slate-400', bg: 'bg-slate-400/10', border: 'border-slate-400/30', icon: 'settings' },
+    'Interrupt': { label: 'Pipeline Interrupted', color: 'text-secondary', bg: 'bg-secondary/10', border: 'border-secondary/40', icon: 'front_hand' }
+};
+
+const getAgentStyle = (msg: Message) => {
+    if (msg.role === 'user') return null;
+    if (msg.category === 'Interrupt') return AGENT_CONFIG['Interrupt'];
+    if (msg.category === 'System') return AGENT_CONFIG['System'];
+    return AGENT_CONFIG[msg.agent || ''] || { label: msg.agent || 'Agent', color: 'text-primary', bg: 'bg-primary/20', border: 'border-primary', icon: 'smart_toy' };
+};
 
 export default function ChatWorkspace({
     messages, isRunning, prompt, setPrompt, handleRun, isInterrupted, resumeRun, activeNode
 }: {
     messages: Message[], isRunning: boolean, prompt: string, setPrompt: (v: string) => void,
-    handleRun: () => void, isInterrupted: boolean, resumeRun: () => void, activeNode: string | null
+    handleRun: () => void, isInterrupted: boolean, resumeRun: (feedback?: string) => void, activeNode: string | null
 }) {
     const scrollRef = useRef<HTMLDivElement>(null);
+    const interruptDetails = useHarnessStore(s => s.interruptDetails);
 
     useEffect(() => {
         if (scrollRef.current) {
@@ -21,22 +40,24 @@ export default function ChatWorkspace({
     return (
         <div className="flex-1 w-full h-full bg-surface-container-low border-r border-ghost-border/15 flex flex-col relative shadow-inner overflow-hidden">
             {/* Active Agent Status Bar */}
-            <div className="absolute top-0 left-0 right-0 h-12 bg-surface-container flex items-center px-6 justify-between z-10 border-b border-ghost-border/15 shadow-[0_4px_12px_rgba(0,0,0,0.1)]">
+            <div className="h-12 bg-surface-container flex items-center px-6 justify-between z-10 border-b border-ghost-border/15 shadow-[0_4px_12px_rgba(0,0,0,0.05)] shrink-0">
                 <div className="flex items-center gap-4">
                     <div className="flex -space-x-2">
                         <div className="w-8 h-8 rounded-full bg-surface-container-lowest flex items-center justify-center ring-2 ring-surface-container relative select-none">
                             <span className="material-symbols-outlined text-[1rem]">architecture</span>
                         </div>
-                        <div className={`w-8 h-8 rounded-full flex items-center justify-center ring-2 ring-surface-container z-10 relative shadow-md select-none ${isRunning ? 'bg-primary border border-primary/30' : 'bg-surface-container-highest'}`}>
-                            <span className={`material-symbols-outlined text-[1rem] ${isRunning ? 'text-on-primary' : 'text-on-surface'}`} data-weight="fill">code</span>
+                        <div className={`w-8 h-8 rounded-full flex items-center justify-center ring-2 ring-surface-container z-10 relative shadow-md select-none ${isRunning ? (AGENT_CONFIG[activeNode || '']?.bg || 'bg-primary') + ' border ' + (AGENT_CONFIG[activeNode || '']?.border || 'border-primary/30') : 'bg-surface-container-highest'}`}>
+                            <span className={`material-symbols-outlined text-[1rem] ${isRunning ? (AGENT_CONFIG[activeNode || '']?.color || 'text-on-primary') : 'text-on-surface'}`} data-weight="fill">
+                                {isRunning ? (AGENT_CONFIG[activeNode || '']?.icon || 'code') : 'code'}
+                            </span>
                         </div>
                         <div className="w-8 h-8 rounded-full bg-surface-container-lowest flex items-center justify-center ring-2 ring-surface-container relative select-none">
                             <span className="material-symbols-outlined text-[1rem]">policy</span>
                         </div>
                     </div>
                     <div className="flex flex-col mt-0.5">
-                        <span className={`text-[10px] font-bold uppercase tracking-widest ${isRunning ? 'text-primary' : 'text-outline'}`}>
-                            {activeNode || 'Swarm'} {isRunning ? '(Active)' : '(Standby)'}
+                        <span className={`text-[10px] font-bold uppercase tracking-widest ${isRunning ? (AGENT_CONFIG[activeNode || '']?.color || 'text-primary') : 'text-outline'}`}>
+                            {AGENT_CONFIG[activeNode || '']?.label || activeNode || 'Swarm'} {isRunning ? '(Active)' : '(Standby)'}
                         </span>
                         <span className="text-[11px] text-on-surface-variant max-w-[200px] truncate">{activeText}</span>
                     </div>
@@ -49,8 +70,8 @@ export default function ChatWorkspace({
                 </div>
             </div>
 
-            {/* Chat History */}
-            <div className="flex-1 overflow-y-auto pt-16 pb-32 px-8 flex flex-col gap-8 scroll-smooth" ref={scrollRef}>
+            {/* Chat History - Flex-1 with overflow handles the layout correctly */}
+            <div className="flex-1 overflow-y-auto pt-8 pb-8 px-8 flex flex-col gap-8 scroll-smooth" ref={scrollRef}>
                 {messages.length === 0 && (
                     <div className="m-auto flex flex-col items-center justify-center text-center opacity-70">
                         <span className="material-symbols-outlined text-[3rem] mb-4 text-primary opacity-50">forum</span>
@@ -61,64 +82,107 @@ export default function ChatWorkspace({
                     </div>
                 )}
 
-                {messages.map(msg => (
-                    <div key={msg.id} className="flex gap-4 group animate-in fade-in slide-in-from-bottom-2 duration-500">
-                        <div className={`w-8 h-8 rounded shrink-0 flex items-center justify-center shadow-sm select-none ${msg.role === 'user' ? 'bg-surface-container-highest border border-ghost-border/20' : 'bg-primary/20 border border-primary/30 text-primary drop-shadow-[0_0_8px_rgba(137,206,255,0.2)]'}`}>
-                            <span className="material-symbols-outlined text-[1.125rem]" data-weight={msg.role !== 'user' ? 'fill' : 'normal'}>
-                                {msg.role === 'user' ? 'person' : 'smart_toy'}
-                            </span>
-                        </div>
-                        <div className="flex flex-col gap-2 w-full max-w-[90%]">
-                            <div className={`text-[11px] font-bold uppercase tracking-wider ${msg.role === 'user' ? 'text-outline' : 'text-primary'}`}>
-                                {msg.role === 'user' ? 'User' : 'Agent'}
+                {messages.map(msg => {
+                    const style = getAgentStyle(msg);
+                    return (
+                        <div key={msg.id} className="flex gap-4 group animate-in fade-in slide-in-from-bottom-2 duration-500">
+                            <div className={`w-8 h-8 rounded shrink-0 flex items-center justify-center shadow-sm select-none 
+                                ${msg.role === 'user' ? 'bg-surface-container-highest border border-ghost-border/20' : (style?.bg + ' border ' + style?.border + ' ' + style?.color)}`}>
+                                <span className={`material-symbols-outlined text-[1.125rem]`} data-weight={msg.role !== 'user' ? 'fill' : 'normal'}>
+                                    {msg.role === 'user' ? 'person' : (style?.icon || 'smart_toy')}
+                                </span>
                             </div>
-                            {msg.role === 'user' ? (
-                                <p className="text-sm leading-relaxed text-on-surface font-medium whitespace-pre-wrap">{msg.text}</p>
-                            ) : (
-                                <div className="bg-surface-container/40 p-4 rounded-xl border-l-[3px] border-primary shadow-[0_8px_24px_rgba(0,0,0,0.1)] backdrop-blur-sm">
-                                    <p className="text-[0.9375rem] leading-relaxed text-on-surface mb-3 whitespace-pre-wrap">{msg.text}</p>
-                                    {msg.intent && (
-                                        <div className="flex items-center gap-2 mt-3 pt-3 border-t border-ghost-border/20">
-                                            <span className="text-[10px] text-primary bg-primary/10 px-2 py-0.5 rounded uppercase font-mono tracking-widest">{msg.intent}</span>
-                                        </div>
-                                    )}
+                            <div className="flex flex-col gap-2 w-full max-w-[90%]">
+                                <div className={`text-[10px] font-black uppercase tracking-widest ${msg.role === 'user' ? 'text-outline' : (style?.color || 'text-primary')}`}>
+                                    {msg.role === 'user' ? 'USER' : (style?.label || 'AGENT')}
                                 </div>
-                            )}
+                                {msg.role === 'user' ? (
+                                    <p className="text-sm leading-relaxed text-on-surface font-medium whitespace-pre-wrap">{msg.text}</p>
+                                ) : (
+                                    <div className={`p-4 rounded-xl border-l-[3px] shadow-[0_8px_24px_rgba(0,0,0,0.06)] backdrop-blur-sm transition-all duration-300
+                                        ${msg.category === 'Interrupt' ? 'bg-secondary/10 border-secondary' :
+                                            msg.category === 'Thought' ? 'bg-primary/5 border-primary/20 opacity-80' :
+                                                msg.category === 'System' ? 'bg-slate-400/5 border-slate-400 font-mono text-[11px]' :
+                                                    `bg-surface-container/40 ${style?.border || 'border-primary'}`}`}>
+
+                                        {msg.category === 'Thought' && (
+                                            <div className="flex items-center gap-1.5 mb-2 opacity-60">
+                                                <span className="material-symbols-outlined text-sm animate-pulse">psychology</span>
+                                                <span className="text-[10px] font-black uppercase tracking-tighter text-primary">Thinking Process</span>
+                                            </div>
+                                        )}
+
+                                        <p className={`text-[0.9375rem] leading-relaxed mb-3 whitespace-pre-wrap ${msg.category === 'Thought' ? 'text-on-surface-variant italic font-inter' : 'text-on-surface'}`}>
+                                            {msg.text}
+                                            {isRunning && msg.id === streamingMessageId && (
+                                                <span className="inline-block w-1.5 h-4 ml-1 bg-primary animate-pulse align-middle rounded-full"></span>
+                                            )}
+                                        </p>
+
+                                        {msg.intent && msg.category !== 'Thought' && (
+                                            <div className="flex items-center gap-2 mt-3 pt-3 border-t border-ghost-border/10">
+                                                <span className={`text-[9px] px-2 py-0.5 rounded uppercase font-bold tracking-widest ${style?.bg} ${style?.color}`}>{msg.intent}</span>
+                                            </div>
+                                        )}
+                                    </div>
+                                )}
+                            </div>
                         </div>
-                    </div>
-                ))}
+                    );
+                })}
             </div>
 
-            {/* Input Area - Positioned at true bottom */}
-            <div className="absolute bottom-0 left-0 right-0 p-6 bg-gradient-to-t from-surface-container-low via-surface-container-low/95 to-transparent z-20">
-                <div className="max-w-4xl mx-auto space-y-3">
-                    {/* HITL Banner */}
-                    {isInterrupted && (
-                        <div className="bg-secondary/15 border border-secondary/30 rounded-xl p-3 flex items-center gap-4 animate-in slide-in-from-bottom-4 fade-in duration-500 shadow-lg backdrop-blur-md">
-                            <div className="w-10 h-10 rounded-full bg-secondary/20 flex items-center justify-center text-secondary shrink-0 animate-pulse">
-                                <span className="material-symbols-outlined text-[1.5rem]" data-weight="fill">front_hand</span>
+            {/* Input Area - No longer absolute, push to bottom via flex layout */}
+            <div className="p-6 bg-surface-container-low border-t border-ghost-border/15 shrink-0 z-20">
+                <div className="max-w-4xl mx-auto space-y-4">
+                    {/* HITL Detailed Request Panel */}
+                    {isInterrupted && interruptDetails && (
+                        <div className="bg-surface-container-high border border-secondary/30 rounded-2xl p-5 animate-in slide-in-from-bottom-4 duration-500 shadow-xl overflow-hidden relative">
+                            <div className="absolute top-0 right-0 p-3 opacity-10 pointer-events-none">
+                                <span className="material-symbols-outlined text-[4rem]">verified_user</span>
                             </div>
-                            <div className="flex-1 min-w-0">
-                                <div className="text-[10px] font-bold uppercase tracking-widest text-secondary mb-0.5">Approval Required</div>
-                                <div className="text-[13px] text-on-surface font-medium truncate">
-                                    Agent is waiting to hand off to <span className="text-secondary font-bold font-mono px-1.5 py-0.5 bg-secondary/10 rounded border border-secondary/20 ml-1">{activeNode || 'Next Node'}</span>
+
+                            <div className="flex flex-col gap-4 relative">
+                                <div className="flex items-center justify-between">
+                                    <div className="flex items-center gap-2">
+                                        <div className="px-2 py-1 bg-primary/10 text-primary text-[10px] font-black rounded uppercase tracking-tighter border border-primary/20">
+                                            {interruptDetails.sender || 'Sender'}
+                                        </div>
+                                        <span className="material-symbols-outlined text-outline text-sm">arrow_forward</span>
+                                        <div className="px-2 py-1 bg-secondary/10 text-secondary text-[10px] font-black rounded uppercase tracking-tighter border border-secondary/20">
+                                            {interruptDetails.receiver || 'Receiver'}
+                                        </div>
+                                    </div>
+                                    <span className="text-[10px] font-black text-secondary uppercase tracking-[0.2em]">Approval_Pending</span>
+                                </div>
+
+                                <div className="space-y-2">
+                                    <label className="text-[9px] font-bold text-outline uppercase tracking-widest">Hand-off Request Context</label>
+                                    <div className="bg-surface-container-lowest/50 p-4 rounded-xl border border-ghost-border/10">
+                                        <p className="text-xs text-on-surface leading-loose font-inter italic opacity-90">
+                                            "{interruptDetails.content || 'No detailed context provided.'}"
+                                        </p>
+                                    </div>
+                                </div>
+
+                                <div className="flex items-center gap-3 pt-2">
+                                    <button
+                                        onClick={() => resumeRun()}
+                                        className="flex-1 py-2.5 bg-secondary text-on-secondary rounded-xl font-black text-[11px] uppercase tracking-widest hover:brightness-110 active:scale-[0.98] transition-all shadow-lg shadow-secondary/20 flex items-center justify-center gap-2"
+                                    >
+                                        <span className="material-symbols-outlined text-[1.125rem]">check_circle</span>
+                                        Approve & Proceed
+                                    </button>
                                 </div>
                             </div>
-                            <button
-                                onClick={() => resumeRun()}
-                                className="px-4 py-2 bg-secondary text-on-secondary rounded-xl font-bold text-[11px] uppercase tracking-widest hover:scale-105 active:scale-95 transition-all shadow-lg shadow-secondary/20 flex items-center gap-2 shrink-0 group"
-                            >
-                                <span className="material-symbols-outlined text-[1.125rem] group-hover:rotate-12 transition-transform">check_circle</span>
-                                Approve
-                            </button>
                         </div>
                     )}
 
                     <div className="relative group">
                         <textarea
-                            className={`w-full bg-surface-container-highest/80 backdrop-blur-md border rounded-2xl p-5 pr-16 text-sm text-on-surface placeholder:text-outline/50 focus:outline-none focus:ring-2 focus:ring-primary/30 transition-all resize-none min-h-[80px] shadow-2xl font-mono
-                                ${isInterrupted ? 'border-secondary/40 shadow-secondary/5 ring-secondary/10' : 'border-ghost-border/30 shadow-black/20'}`}
-                            placeholder={isInterrupted ? "Type custom instructions to redirect or 'Approve' to proceed..." : "Ask the swarm to code, refactor or debug..."}
+                            className={`w-full bg-surface-container-highest/50 backdrop-blur-md border rounded-2xl p-5 pr-16 text-sm text-on-surface placeholder:text-outline/50 focus:outline-none focus:ring-2 focus:ring-primary/30 transition-all resize-none min-h-[80px] shadow-sm font-inter
+                                ${isInterrupted ? 'border-secondary/40 ring-secondary/10' : 'border-ghost-border/30'}`}
+                            placeholder={isInterrupted ? "Add steering feedback or 'Approve' to proceed..." : "Ask the swarm to code, refactor or debug..."}
                             value={prompt}
                             onChange={e => setPrompt(e.target.value)}
                             onKeyDown={e => {
@@ -141,18 +205,16 @@ export default function ChatWorkspace({
                         </div>
                     </div>
                 </div>
-                <div className="mt-3 flex items-center justify-center gap-6 px-2 opacity-50 hover:opacity-100 transition-opacity">
-                    <button className="text-[9px] text-outline hover:text-primary transition-colors flex items-center gap-1 font-mono uppercase tracking-widest">
-                        <span className="material-symbols-outlined text-[0.875rem]">attach_file</span> Context
-                    </button>
-                    <button className="text-[9px] text-outline hover:text-primary transition-colors flex items-center gap-1 font-mono uppercase tracking-widest">
-                        <span className="material-symbols-outlined text-[0.875rem]">history</span> History
-                    </button>
-                    <button className="text-[9px] text-outline hover:text-primary transition-colors flex items-center gap-1 font-mono uppercase tracking-widest">
-                        <span className="material-symbols-outlined text-[0.875rem]">settings_input_component</span> Agents
-                    </button>
+
+                <div className="mt-3 hidden md:flex items-center justify-center gap-6 px-2 opacity-30 hover:opacity-100 transition-opacity">
+                    <div className="text-[9px] text-outline flex items-center gap-1 font-mono uppercase tracking-widest">
+                        <span className="material-symbols-outlined text-[0.875rem]">keyboard_command_key</span> Enter to send
+                    </div>
+                    <div className="text-[9px] text-outline flex items-center gap-1 font-mono uppercase tracking-widest">
+                        <span className="material-symbols-outlined text-[0.875rem]">keyboard_arrow_up</span> Shift+Enter for newline
+                    </div>
                 </div>
             </div>
         </div>
-    )
+    );
 }

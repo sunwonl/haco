@@ -53,7 +53,7 @@ QADecision.model_rebuild()
 from harnesscore.agents.base import run_agent_react_loop
 from harnesscore.tools.journal import JournalTool
 
-def qa_node(state: SystemState, config: HarnessConfig) -> dict:
+async def qa_node(state: SystemState, config: HarnessConfig) -> dict:
     """LangGraph node execution for the QA Evaluator."""
     project_root = Path(config.project_root or ".")
     harness_dir = project_root / ".harness"
@@ -116,7 +116,7 @@ def qa_node(state: SystemState, config: HarnessConfig) -> dict:
         f"Latest Error Context: {state.latest_error or 'None'}\n"
     )
 
-    result = run_agent_react_loop(
+    result = await run_agent_react_loop(
         agent_name="QA Evaluator",
         state=state,
         llm=llm,

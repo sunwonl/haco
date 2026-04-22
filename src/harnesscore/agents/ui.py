@@ -66,7 +66,7 @@ from harnesscore.agents.base import run_agent_react_loop
 from harnesscore.tools.journal import JournalTool
 from harnesscore.tools.git_tool import GitTool
 
-def ui_node(state: SystemState, config: HarnessConfig) -> dict:
+async def ui_node(state: SystemState, config: HarnessConfig) -> dict:
     """LangGraph node execution for the UI Engineer."""
     project_root = Path(config.project_root or ".").resolve()
     harness_dir = project_root / ".harness"
@@ -114,7 +114,7 @@ def ui_node(state: SystemState, config: HarnessConfig) -> dict:
         f"Already Completed Tasks: {json.dumps(state.completed_tasks, ensure_ascii=False)}\n"
     )
 
-    result = run_agent_react_loop(
+    result = await run_agent_react_loop(
         agent_name="UI Engineer", state=state, llm=llm, tools=tools, 
         sys_prompt=sys_prompt, context_str=context_str, harness_dir=harness_dir, max_loops=10
     )
