@@ -128,9 +128,32 @@ def stream_pipeline(thread_id: str, prompt: str = "", resume: str = "false"):
                 # A. Handle Real-time Content Streaming
                 if kind == "on_chat_model_stream":
                     chunk = event["data"]["chunk"]
-                    if hasattr(chunk, "content") and chunk.content:
-                        payload = {"type": "content_delta", "content": chunk.content}
-                        yield f"data: {json.dumps(payload)}\n\n"
+                    content = ""
+                    
+                    # Extract and yield content parts
+                    if hasattr(chunk, "content"):
+                        raw_content = chunk.content
+                        
+                        # Case 1: Simple string
+                        if isinstance(raw_content, str) and raw_content:
+                            yield f"data: {json.dumps({'type': 'content_delta', 'content': raw_content})}\n\n"
+                            
+                        # Case 2: List of parts (common in multi-modal or thinking models)
+                        elif isinstance(raw_content, list):
+                            for part in raw_content:
+                                if isinstance(part, str):
+                                    yield f"data: {json.dumps({'type': 'content_delta', 'content': part})}\n\n"
+                                elif isinstance(part, dict):
+                                    ptype = part.get("type", "text")
+                                    text = part.get("text", "")
+                                    if text:
+                                        # Map thought/reasoning types to our 'Thought' category
+                                        cat = "Thought" if ptype in ["thought", "reasoning"] else "Message"
+                                        yield f"data: {json.dumps({'type': 'content_delta', 'content': text, 'category': cat})}\n\n"
+                        
+                        # Case 3: Dictionary (fallback)
+                        elif isinstance(raw_content, dict) and "text" in raw_content:
+                            yield f"data: {json.dumps({'type': 'content_delta', 'content': raw_content['text']})}\n\n"
 
                 # B. Handle Node Completion (State Updates)
                 elif kind == "on_chain_end" and event["name"] in ["PO", "System Architect", "Core Developer", "QA Evaluator", "UI Engineer", "Design Reviewer"]:
@@ -223,9 +246,23 @@ async def resume_after_interrupt(thread_id: str, feedback: str = ""):
                 
                 if kind == "on_chat_model_stream":
                     chunk = event["data"]["chunk"]
-                    if hasattr(chunk, "content") and chunk.content:
-                        payload = {"type": "content_delta", "content": chunk.content}
-                        yield f"data: {json.dumps(payload)}\n\n"
+                    # Extract and yield content parts
+                    if hasattr(chunk, "content"):
+                        raw_content = chunk.content
+                        if isinstance(raw_content, str) and raw_content:
+                            yield f"data: {json.dumps({'type': 'content_delta', 'content': raw_content})}\n\n"
+                        elif isinstance(raw_content, list):
+                            for part in raw_content:
+                                if isinstance(part, str):
+                                    yield f"data: {json.dumps({'type': 'content_delta', 'content': part})}\n\n"
+                                elif isinstance(part, dict):
+                                    ptype = part.get("type", "text")
+                                    text = part.get("text", "")
+                                    if text:
+                                        cat = "Thought" if ptype in ["thought", "reasoning"] else "Message"
+                                        yield f"data: {json.dumps({'type': 'content_delta', 'content': text, 'category': cat})}\n\n"
+                        elif isinstance(raw_content, dict) and "text" in raw_content:
+                            yield f"data: {json.dumps({'type': 'content_delta', 'content': raw_content['text']})}\n\n"
 
                 elif kind == "on_chain_end" and event["name"] in ["PO", "System Architect", "Core Developer", "QA Evaluator", "UI Engineer", "Design Reviewer"]:
                     node_name = event["name"]

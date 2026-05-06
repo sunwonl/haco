@@ -261,9 +261,17 @@ export const useHarnessStore = create<HarnessState>((set, get) => ({
         }
 
         if (raw.type === 'node_update') {
+            const currentStreamingId = get().streamingMessageId
             finishStreaming()
+            
             const node = raw.node ?? ''
             const status = (raw.status as any) || 'thinking'
+            
+            // If the node finished successfully, remove the "temporary" streaming message
+            // before adding the finalized logs to avoid duplication.
+            if (status === 'success' && currentStreamingId) {
+                set(s => ({ messages: s.messages.filter(m => m.id !== currentStreamingId) }))
+            }
             const nextAgent = raw.next_agent ?? null
             const incomingChanges = raw.file_changes ?? []
 

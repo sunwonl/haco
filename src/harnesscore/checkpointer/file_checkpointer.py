@@ -11,7 +11,7 @@ import json
 import threading
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Iterator, Optional, Sequence, Tuple
+from typing import Any, Iterator, AsyncIterator, Optional, Sequence, Tuple
 
 from langgraph.checkpoint.base import (
     BaseCheckpointSaver,
@@ -120,3 +120,37 @@ class FileCheckpointer(BaseCheckpointSaver):
     ) -> None:
         # Lightweight: we persist only full checkpoints, not intermediate writes.
         pass
+    # ------------------------------------------------------------------ #
+    #  Async BaseCheckpointSaver interface                                #
+    # ------------------------------------------------------------------ #
+    async def aget_tuple(self, config: dict) -> Optional[CheckpointTuple]:
+        return self.get_tuple(config)
+
+    async def alist(
+        self,
+        config: Optional[dict],
+        *,
+        filter: Optional[dict] = None,
+        before: Optional[dict] = None,
+        limit: Optional[int] = None,
+    ) -> AsyncIterator[CheckpointTuple]:
+        for checkpoint in self.list(config, filter=filter, before=before, limit=limit):
+            yield checkpoint
+
+    async def aput(
+        self,
+        config: dict,
+        checkpoint: Checkpoint,
+        metadata: CheckpointMetadata,
+        new_versions: Any = None,
+    ) -> dict:
+        return self.put(config, checkpoint, metadata, new_versions)
+
+    async def aput_writes(
+        self,
+        config: dict,
+        writes: Sequence[Tuple[str, Any]],
+        task_id: str,
+        task_path: Sequence[str] = (),
+    ) -> None:
+        self.put_writes(config, writes, task_id, task_path)

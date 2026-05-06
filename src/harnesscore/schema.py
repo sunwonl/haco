@@ -61,7 +61,7 @@ class SystemState(BaseModel):
         default_factory=list,
         description="Full conversation history (messages)",
     )
-    user_prompt: str = Field(description="The latest user requirement or message")
+    user_prompt: str = Field(default="", description="The latest user requirement or message")
     current_assignee: str = Field(default="PO", description="Agent currently holding control")
 
     tasks: dict[str, str] = Field(

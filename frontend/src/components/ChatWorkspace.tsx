@@ -20,6 +20,8 @@ const getAgentStyle = (msg: Message) => {
     return AGENT_CONFIG[msg.agent || ''] || { label: msg.agent || 'Agent', color: 'text-primary', bg: 'bg-primary/20', border: 'border-primary', icon: 'smart_toy' };
 };
 
+const JOURNEY_AGENTS = ['PO', 'SA', 'CD', 'QA'];
+
 export default function ChatWorkspace({
     messages, isRunning, prompt, setPrompt, handleRun, isInterrupted, resumeRun, activeNode
 }: {
@@ -28,6 +30,7 @@ export default function ChatWorkspace({
 }) {
     const scrollRef = useRef<HTMLDivElement>(null);
     const interruptDetails = useHarnessStore(s => s.interruptDetails);
+    const streamingMessageId = useHarnessStore(s => s.streamingMessageId);
 
     useEffect(() => {
         if (scrollRef.current) {
@@ -35,37 +38,49 @@ export default function ChatWorkspace({
         }
     }, [messages, isRunning]);
 
-    const activeText = activeNode ? `${activeNode} is executing...` : 'System Idle';
+    const activeText = activeNode ? `${AGENT_CONFIG[activeNode]?.label || activeNode} is executing...` : 'System Idle';
 
     return (
         <div className="flex-1 w-full h-full bg-surface-container-low border-r border-ghost-border/15 flex flex-col relative shadow-inner overflow-hidden">
-            {/* Active Agent Status Bar */}
-            <div className="h-12 bg-surface-container flex items-center px-6 justify-between z-10 border-b border-ghost-border/15 shadow-[0_4px_12px_rgba(0,0,0,0.05)] shrink-0">
-                <div className="flex items-center gap-4">
-                    <div className="flex -space-x-2">
-                        <div className="w-8 h-8 rounded-full bg-surface-container-lowest flex items-center justify-center ring-2 ring-surface-container relative select-none">
-                            <span className="material-symbols-outlined text-[1rem]">architecture</span>
-                        </div>
-                        <div className={`w-8 h-8 rounded-full flex items-center justify-center ring-2 ring-surface-container z-10 relative shadow-md select-none ${isRunning ? (AGENT_CONFIG[activeNode || '']?.bg || 'bg-primary') + ' border ' + (AGENT_CONFIG[activeNode || '']?.border || 'border-primary/30') : 'bg-surface-container-highest'}`}>
-                            <span className={`material-symbols-outlined text-[1rem] ${isRunning ? (AGENT_CONFIG[activeNode || '']?.color || 'text-on-primary') : 'text-on-surface'}`} data-weight="fill">
-                                {isRunning ? (AGENT_CONFIG[activeNode || '']?.icon || 'code') : 'code'}
-                            </span>
-                        </div>
-                        <div className="w-8 h-8 rounded-full bg-surface-container-lowest flex items-center justify-center ring-2 ring-surface-container relative select-none">
-                            <span className="material-symbols-outlined text-[1rem]">policy</span>
-                        </div>
-                    </div>
-                    <div className="flex flex-col mt-0.5">
-                        <span className={`text-[10px] font-bold uppercase tracking-widest ${isRunning ? (AGENT_CONFIG[activeNode || '']?.color || 'text-primary') : 'text-outline'}`}>
-                            {AGENT_CONFIG[activeNode || '']?.label || activeNode || 'Swarm'} {isRunning ? '(Active)' : '(Standby)'}
-                        </span>
-                        <span className="text-[11px] text-on-surface-variant max-w-[200px] truncate">{activeText}</span>
-                    </div>
+            {/* 1. Agent Journey Stepper (Top Bar) */}
+            <div className="h-14 bg-surface-container flex items-center px-8 justify-between z-10 border-b border-ghost-border/15 shadow-[0_4px_12px_rgba(0,0,0,0.05)] shrink-0">
+                <div className="flex items-center gap-10">
+                    {JOURNEY_AGENTS.map((role, idx) => {
+                        const config = AGENT_CONFIG[role];
+                        const isActive = activeNode === role && isRunning;
+                        const isPast = !isActive && messages.some(m => m.agent === role);
+                        
+                        return (
+                            <div key={role} className="flex items-center gap-3 group relative">
+                                <div className={`flex items-center justify-center w-8 h-8 rounded-full border-2 transition-all duration-500 shadow-sm
+                                    ${isActive ? `${config.bg} ${config.border} scale-110 ring-4 ring-primary/10` : 
+                                      isPast ? 'bg-emerald-500/10 border-emerald-500/40 opacity-70' : 'bg-surface-container-highest border-ghost-border/20 opacity-30'}`}>
+                                    <span className={`material-symbols-outlined text-[1rem] ${isActive ? config.color : isPast ? 'text-emerald-500' : 'text-outline'}`} data-weight={isActive ? 'fill' : 'normal'}>
+                                        {isActive && isRunning ? config.icon : (isPast ? 'check_circle' : config.icon)}
+                                    </span>
+                                </div>
+                                <div className="flex flex-col">
+                                    <span className={`text-[9px] font-black uppercase tracking-tighter transition-colors ${isActive ? config.color : 'text-outline'}`}>
+                                        {role}
+                                    </span>
+                                    {isActive && (
+                                        <span className="absolute -bottom-4 left-0 text-[8px] font-bold text-primary animate-pulse whitespace-nowrap">
+                                            Executing...
+                                        </span>
+                                    )}
+                                </div>
+                                {idx < JOURNEY_AGENTS.length - 1 && (
+                                    <div className="absolute -right-7 top-1/2 -translate-y-1/2 w-4 h-[1px] bg-ghost-border/20" />
+                                )}
+                            </div>
+                        );
+                    })}
                 </div>
-                <div className="flex items-center gap-2">
-                    <span className={`w-2 h-2 rounded-full ${isRunning ? 'bg-primary animate-pulse shadow-[0_0_8px_rgba(137,206,255,0.8)]' : 'bg-outline'}`}></span>
-                    <span className="text-[10px] text-on-surface-variant font-mono uppercase tracking-widest">
-                        {isRunning ? 'THINKING' : 'IDLE'}
+
+                <div className="flex items-center gap-3 bg-surface-container-lowest px-3 py-1.5 rounded-full border border-ghost-border/10">
+                    <span className={`w-1.5 h-1.5 rounded-full ${isRunning ? 'bg-primary animate-pulse shadow-[0_0_8px_rgba(137,206,255,0.8)]' : 'bg-outline/30'}`}></span>
+                    <span className="text-[9px] text-on-surface-variant font-mono uppercase tracking-[0.2em] font-black">
+                        {isRunning ? 'Swarm_Online' : 'Idle'}
                     </span>
                 </div>
             </div>
@@ -175,6 +190,20 @@ export default function ChatWorkspace({
                                     </button>
                                 </div>
                             </div>
+                        </div>
+                    )}
+
+                    {/* 3. Live Typing Indicator */}
+                    {isRunning && !isInterrupted && (
+                        <div className="flex items-center gap-3 mb-2 px-1 animate-in fade-in slide-in-from-bottom-1 duration-300">
+                            <div className="flex gap-1">
+                                <span className="w-1 h-1 bg-primary rounded-full animate-bounce [animation-delay:-0.3s]"></span>
+                                <span className="w-1 h-1 bg-primary rounded-full animate-bounce [animation-delay:-0.15s]"></span>
+                                <span className="w-1 h-1 bg-primary rounded-full animate-bounce"></span>
+                            </div>
+                            <span className="text-[10px] text-primary font-black uppercase tracking-widest opacity-80">
+                                {activeText}
+                            </span>
                         </div>
                     )}
 
