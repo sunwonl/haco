@@ -41,6 +41,17 @@ uv run harness cli "간단한 계산기 앱을 Python으로 만들어줘"
 
 ---
 
+## 📚 상세 가이드 (Advanced Guides)
+
+시스템의 심층적인 이해와 확장을 위해 다음 문서들을 참고하세요.
+
+- [에이전트 확장 가이드 (MCP & Skills)](./EXTENDING_AGENTS.md): 새로운 도구와 전문 지식을 추가하는 방법
+- [UI 상세 매뉴얼 (UI Manual)](./UI_MANUAL.md): 웹 인터페이스 기능 및 조작법
+- [프로젝트 관리 및 워크플로우](./WORKFLOW_DESIGN.md): 하네스코어의 협업 모델과 태스크 관리
+- [시스템 아키텍처](./SYSTEM_ARCHITECTURE.md): 내부 엔진 및 설계 구조
+
+---
+
 ## 🔍 활동 모니터링 (Observability)
 
 에이전트가 어떤 작업을 수행하고 있는지 실시간으로 확인하려면 다음 파일을 모니터링하세요.

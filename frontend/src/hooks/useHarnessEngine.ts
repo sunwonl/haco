@@ -82,12 +82,18 @@ export function useHarnessEngine() {
     }
 
     const fetchFiles = async (path: string = '.') => {
+        store.setIsLoadingFiles(true)
         try {
             const res = await fetch(`${BASE}/api/files?path=${encodeURIComponent(path)}`)
-            if (!res.ok) return
+            if (!res.ok) {
+                store.setIsLoadingFiles(false)
+                return
+            }
             const data = await res.json()
             store.setFiles(data.entries, data.path)
-        } catch { /* ignore */ }
+        } catch {
+            store.setIsLoadingFiles(false)
+        }
     }
 
     const fetchFileContent = async (path: string) => {

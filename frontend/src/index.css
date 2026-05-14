@@ -63,4 +63,15 @@ body {
   word-wrap: normal;
   white-space: nowrap;
   direction: ltr;
+  user-select: none;
+}
+
+@keyframes progress-flow {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(400%); }
+}
+
+.animate-progress-flow {
+  animation: progress-flow 2s ease-in-out infinite;
+  width: 25%;
 }

@@ -1,3 +1,4 @@
+import { useHarnessStore } from "../store/useHarnessStore";
 import type { TabType } from "./Sidebar";
 
 export default function TopBar({
@@ -9,6 +10,9 @@ export default function TopBar({
     activeTab: TabType,
     onTabChange: (t: TabType) => void
 }) {
+    const setIsSettingsOpen = useHarnessStore(s => s.setIsSettingsOpen)
+    const setIsConsoleOpen = useHarnessStore(s => s.setIsConsoleOpen)
+
     return (
         <header className="w-full h-14 bg-surface-container-low border-b border-ghost-border/15 flex justify-between items-center px-6 font-inter tracking-tight text-sm shrink-0 z-20 shadow-sm relative">
             <div className="flex items-center gap-8 h-full">
@@ -42,13 +46,21 @@ export default function TopBar({
                 </div>
 
                 <div className="flex items-center gap-1">
-                    <span className="material-symbols-outlined text-outline hover:bg-surface-container-highest p-1 rounded transition-colors cursor-pointer text-[1.125rem]">settings</span>
-                    <span className="material-symbols-outlined text-outline hover:bg-surface-container-highest p-1 rounded transition-colors cursor-pointer text-[1.125rem]">terminal</span>
+                    <button 
+                        onClick={() => setIsSettingsOpen(true)}
+                        className="material-symbols-outlined text-outline hover:bg-surface-container-highest p-1 rounded transition-colors cursor-pointer text-[1.125rem]"
+                        title="Settings"
+                    >
+                        settings
+                    </button>
+                    <button 
+                        onClick={() => setIsConsoleOpen(true)}
+                        className="material-symbols-outlined text-outline hover:bg-surface-container-highest p-1 rounded transition-colors cursor-pointer text-[1.125rem]"
+                        title="Console"
+                    >
+                        terminal
+                    </button>
                 </div>
-
-                <button className="bg-primary text-on-primary px-3 py-1 font-bold rounded-md active:scale-95 duration-100 flex items-center text-[10px] tracking-widest gap-1 shadow-lg shadow-primary/20">
-                    DEPLOY
-                </button>
             </div>
         </header>
     )

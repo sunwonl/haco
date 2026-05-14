@@ -4,7 +4,7 @@ Configuration loader for .harness/settings.json.
 import json
 import os
 from pathlib import Path
-from typing import Optional, Dict, List
+from typing import Optional, Dict, List, Any
 
 from pydantic import BaseModel, Field
 
@@ -18,10 +18,10 @@ class LLMConfig(BaseModel):
 
     provider: str = Field(
         default="google-genai",
-        description="LLM provider ID (google-genai | openai | anthropic | ollama)",
+        description="LLM provider ID (google-genai | google-vertexai | openai | anthropic | ollama)",
     )
     default_model: str = Field(
-        default="gemini-2.0-flash",
+        default="gemini-3.1-flash-lite-preview",
         description="Model used by all agents unless overridden by agent_models",
     )
     agent_models: Dict[str, str] = Field(
@@ -43,6 +43,14 @@ class CredentialsConfig(BaseModel):
     gcp_credentials_path: Optional[str] = Field(
         default=None,
         description="Path to a GCP service-account JSON file (leave null to use ADC)",
+    )
+    gcp_project: Optional[str] = Field(
+        default=None,
+        description="GCP Project ID (required for Vertex AI if not in creds file)",
+    )
+    gcp_location: str = Field(
+        default="global",
+        description="GCP region for Vertex AI",
     )
 
 
@@ -89,9 +97,12 @@ class HarnessConfig(BaseModel):
         default_factory=lambda: [".git", "node_modules", "__pycache__", ".harness"],
         description="Path patterns excluded from agent file access",
     )
-    mcp_servers: Dict[str, str] = Field(
+    mcp_servers: Dict[str, List[Dict[str, Any]]] = Field(
         default_factory=dict,
-        description="MCP server name → endpoint URL",
+        description=(
+            "Agent Name (or 'global') -> List of MCP server configs. "
+            'Example: {"CD": [{"name": "github", "command": "npx", "args": ["-y", "@modelcontextprotocol/server-github"]}]}'
+        ),
     )
     language: str = Field(
         default="en",

@@ -16,28 +16,33 @@ class PromptManager:
     @staticmethod
     def load_custom_instructions(harness_dir: Path, agent_id: str) -> str:
         """
-        Load custom instructions for a specific agent.
-        
-        Args:
-            harness_dir: Path to the .harness/ directory.
-            agent_id: Identifier for the agent (e.g., 'po', 'core_developer', 'qa_evaluator').
-            
-        Returns:
-            The content of the markdown instruction file, or an empty string if not found.
+        Load custom instructions for a specific agent and include global memory.
         """
-        # Normalize agent_id to filename format (lowercase, replace spaces with underscores)
+        # 1. Load Global Memory (memory.md)
+        global_memory = ""
+        memory_path = harness_dir / "memory.md"
+        if memory_path.exists():
+            try:
+                mem_content = memory_path.read_text(encoding="utf-8").strip()
+                if mem_content:
+                    global_memory = f"\n\n### 🧠 GLOBAL PROJECT MEMORY (Previous Context & Rules):\n{mem_content}\n"
+            except Exception as e:
+                logger.error(f"Failed to read global memory: {e}")
+
+        # 2. Load Agent-Specific Instructions
         filename = agent_id.lower().replace(" ", "_") + ".md"
         instructions_path = harness_dir / "instructions" / filename
 
+        agent_instr = ""
         if instructions_path.exists():
             try:
                 content = instructions_path.read_text(encoding="utf-8").strip()
                 if content:
-                    return f"\n\n--- User's Specific Instructions for {agent_id} ---\n{content}\n"
+                    agent_instr = f"\n\n### 📜 USER'S SPECIFIC INSTRUCTIONS FOR {agent_id.upper()}:\n{content}\n"
             except Exception as e:
                 logger.error(f"Failed to read custom instructions for {agent_id}: {e}")
         
-        return ""
+        return global_memory + agent_instr
     @staticmethod
     def get_default_templates() -> dict[str, str]:
         """Return a mapping of agent_id to default instruction content."""

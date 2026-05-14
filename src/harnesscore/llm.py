@@ -17,26 +17,47 @@ def get_llm(config: HarnessConfig, agent_name: str, **kwargs: Any) -> BaseChatMo
     Instantiate the correct LangChain BaseChatModel based on config.
     """
     model_name = config.model_for_agent(agent_name)
-    api_key = config.resolve_api_key()
+    provider = config.llm.provider
 
-    if not api_key:
-        raise ValueError(
-            f"API key not found. Ensure {config.credentials.api_key_env} is set "
-            "before running HarnessCore agents."
-        )
-
-    if config.llm.provider == "google-genai":
-        # Note: We support google-genai out of the box right now.
+    if provider == "google-genai":
+        api_key = config.resolve_api_key()
+        if not api_key:
+            raise ValueError(
+                f"API key not found for {provider}. Ensure {config.credentials.api_key_env} is set."
+            )
         return ChatGoogleGenerativeAI(
             model=model_name,
             api_key=api_key,
             **kwargs,
         )
-    elif config.llm.provider == "openai":
+
+    elif provider == "google-vertexai":
+        from langchain_google_vertexai import ChatVertexAI
+        
+        creds = None
+        if config.credentials.gcp_credentials_path:
+            from google.oauth2 import service_account
+            creds = service_account.Credentials.from_service_account_file(
+                config.credentials.gcp_credentials_path
+            )
+        
+        return ChatVertexAI(
+            model=model_name,
+            project=config.credentials.gcp_project,
+            location=config.credentials.gcp_location,
+            credentials=creds,
+            **kwargs,
+        )
+
+    elif provider == "openai":
+        api_key = config.resolve_api_key()
+        if not api_key:
+            raise ValueError(f"API key not found for {provider}.")
         # Placeholder for OpenAI (requires langchain-openai)
         raise NotImplementedError("OpenAI provider requires installing `langchain-openai`.")
+
     else:
-        raise NotImplementedError(f"Provider {config.llm.provider} is not yet supported.")
+        raise NotImplementedError(f"Provider {provider} is not yet supported.")
 
 
 def extract_token_usage(response: Any) -> TokenUsage:

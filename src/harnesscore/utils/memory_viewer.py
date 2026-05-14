@@ -14,18 +14,20 @@ class MemoryViewer:
             return {"raw": "# No Memory Found\nMemory file does not exist yet.", "sections": []}
         
         content = memory_path.read_text(encoding="utf-8")
-        # Simple section parsing by headers
+        # Improved section parsing
         sections = []
-        current_section = None
+        current_section = {"header": "General Knowledge", "content": []}
+        
         for line in content.splitlines():
             if line.startswith("#"):
-                if current_section:
+                # If the previous section has content, save it
+                if current_section["content"]:
                     sections.append(current_section)
-                current_section = {"header": line.strip("# "), "content": []}
-            elif current_section:
+                current_section = {"header": line.lstrip("#").strip(), "content": []}
+            else:
                 current_section["content"].append(line)
         
-        if current_section:
+        if current_section["content"]:
             sections.append(current_section)
             
         return {
@@ -54,34 +56,37 @@ class MemoryViewer:
 
     @staticmethod
     def get_session_timeline(harness_dir: str) -> List[Dict[str, Any]]:
-        """Extracts key messages and decisions from journal.jsonl to build a timeline."""
-        journal_path = Path(harness_dir) / "journal.jsonl"
-        if not journal_path.exists():
+        """Extracts key messages and decisions from conversation.json to build a timeline."""
+        json_path = Path(harness_dir) / "conversation.json"
+        if not json_path.exists():
             return []
         
         timeline = []
         try:
-            with open(journal_path, "r", encoding="utf-8") as f:
-                for line in f:
-                    if not line.strip(): continue
-                    entry = json.loads(line)
-                    # Filter for 'Message' or major 'Decision' points (Action to route/submit)
-                    if entry.get("category") == "Message":
-                        timeline.append({
-                            "timestamp": entry.get("timestamp"),
-                            "role": entry.get("role"),
-                            "type": "Communication",
-                            "content": entry.get("content")
-                        })
-                    elif entry.get("category") == "Action" and entry.get("target") in ["route_tasks", "submit_work"]:
+            entries = json.loads(json_path.read_text(encoding="utf-8"))
+            for entry in entries:
+                # Filter for 'Message' or major 'Decision' points
+                if entry.get("category") == "Message":
+                    timeline.append({
+                        "timestamp": entry.get("timestamp"),
+                        "role": entry.get("role"),
+                        "type": "Communication",
+                        "content": entry.get("content")
+                    })
+                elif entry.get("category") == "Action" and entry.get("target") in ["route_tasks", "submit_work"]:
+                    try:
+                        args = json.loads(entry.get("content", "{}"))
+                        next_a = args.get("next_agent", "Unknown")
                         timeline.append({
                             "timestamp": entry.get("timestamp"),
                             "role": entry.get("role"),
                             "type": "Decision",
-                            "content": f"Routed task to {entry.get('target')}"
+                            "content": f"Routed task to {next_a}"
                         })
+                    except:
+                        pass
         except Exception as e:
-            print(f"Error parsing journal: {e}")
+            print(f"Error parsing conversation.json: {e}")
             
         # Return last 20 events for brevity
         return timeline[-20:]

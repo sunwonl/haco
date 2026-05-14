@@ -9,9 +9,10 @@ interface FileExplorerProps {
 export default function FileExplorer({ onFetchFiles, onFetchContent }: FileExplorerProps) {
     const files = useHarnessStore(s => s.files)
     const currentPath = useHarnessStore(s => s.currentFilePath)
-    const fileContent = useHarnessStore(s => s.fileContent)
     const threadId = useHarnessStore(s => s.threadId)
     const fileChanges = useHarnessStore(s => s.fileChanges)
+    const isLoadingFiles = useHarnessStore(s => s.isLoadingFiles)
+    const setIsCodeViewerOpen = useHarnessStore(s => s.setIsCodeViewerOpen)
 
     const [expandedFile, setExpandedFile] = useState<string | null>(null)
 
@@ -21,6 +22,7 @@ export default function FileExplorer({ onFetchFiles, onFetchContent }: FileExplo
         } else {
             setExpandedFile(entry.path)
             onFetchContent(entry.path)
+            setIsCodeViewerOpen(true)
         }
     }
 
@@ -60,10 +62,15 @@ export default function FileExplorer({ onFetchFiles, onFetchContent }: FileExplo
 
             {/* File List */}
             <div className="flex-1 overflow-y-auto py-1 no-scrollbar">
-                {files.length === 0 ? (
+                {isLoadingFiles ? (
                     <div className="px-4 py-8 flex flex-col items-center justify-center text-outline/40">
                         <span className="material-symbols-outlined text-[1.5rem] mb-1 animate-spin">sync</span>
                         <div className="text-[10px] font-mono">Exploring...</div>
+                    </div>
+                ) : files.length === 0 ? (
+                    <div className="px-4 py-8 flex flex-col items-center justify-center text-outline/40">
+                        <span className="material-symbols-outlined text-[1.5rem] mb-1">folder_open</span>
+                        <div className="text-[10px] font-mono">Empty Folder</div>
                     </div>
                 ) : (
                     files.map(entry => {
@@ -101,19 +108,6 @@ export default function FileExplorer({ onFetchFiles, onFetchContent }: FileExplo
                     })
                 )}
             </div>
-
-            {/* Inline file content preview (collapsible) */}
-            {fileContent && expandedFile && (
-                <div className="border-t border-ghost-border/20 bg-surface-container-lowest max-h-40 overflow-y-auto">
-                    <div className="px-3 py-1.5 flex items-center justify-between border-b border-ghost-border/10">
-                        <span className="text-[10px] text-outline font-mono truncate">{expandedFile}</span>
-                        <button onClick={() => setExpandedFile(null)} className="text-outline hover:text-on-surface">
-                            <span className="material-symbols-outlined text-[12px]">close</span>
-                        </button>
-                    </div>
-                    <pre className="text-[10px] px-3 py-2 text-on-surface-variant font-mono leading-4 whitespace-pre-wrap break-all">{fileContent.substring(0, 500)}</pre>
-                </div>
-            )}
         </div>
     )
 }

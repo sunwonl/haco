@@ -429,6 +429,85 @@ async def get_runtime_stats(thread_id: str):
 
 
 # ─── API: Memory & Knowledge ────────────────────────────────────────────────
+@app.get("/api/config")
+async def get_config():
+    """Returns the current HarnessCore configuration."""
+    from harnesscore.config.loader import load_config
+    config = load_config()
+    return {
+        "model_id": config.model_id,
+        "location": config.location,
+        "project_id": config.project_id,
+        "api_key_configured": bool(config.resolve_api_key())
+    }
+
+@app.post("/api/config")
+async def update_config(data: dict):
+    """Updates the HarnessCore configuration."""
+    from harnesscore.config.loader import load_config, HarnessConfig
+    config = load_config()
+    
+    # Update only provided fields
+    if "model_id" in data: config.model_id = data["model_id"]
+    if "location" in data: config.location = data["location"]
+    if "project_id" in data: config.project_id = data["project_id"]
+    if "mcp_servers" in data: config.mcp_servers = data["mcp_servers"]
+    
+    # Save back to file
+    config_path = Path(config.project_root or ".") / ".harness" / "harness.json"
+    config_path.parent.mkdir(parents=True, exist_ok=True)
+    with config_path.open("w", encoding="utf-8") as f:
+        json.dump(config.model_dump(), f, indent=4)
+        
+    return {"status": "success", "message": "Configuration updated."}
+
+@app.get("/api/skills")
+async def get_skills():
+    """Lists all available skills from .harness/skills/."""
+    from harnesscore.config.loader import load_config
+    config = load_config()
+    skills_dir = Path(config.project_root or ".") / ".harness" / "skills"
+    
+    if not skills_dir.exists():
+        return []
+        
+    skills = []
+    for f in skills_dir.glob("*.md"):
+        skills.append({
+            "id": f.stem,
+            "name": f.stem.replace("_", " ").title(),
+            "content": f.read_text(encoding="utf-8")
+        })
+    return skills
+
+@app.post("/api/skills")
+async def save_skill(data: dict):
+    """Creates or updates a skill markdown file."""
+    from harnesscore.config.loader import load_config
+    config = load_config()
+    skills_dir = Path(config.project_root or ".") / ".harness" / "skills"
+    skills_dir.mkdir(parents=True, exist_ok=True)
+    
+    skill_id = data.get("id", "new_skill").lower().replace(" ", "_")
+    content = data.get("content", "")
+    
+    skill_path = skills_dir / f"{skill_id}.md"
+    skill_path.write_text(content, encoding="utf-8")
+    
+    return {"status": "success", "skill_id": skill_id}
+
+@app.delete("/api/skills/{skill_id}")
+async def delete_skill(skill_id: str):
+    """Deletes a skill markdown file."""
+    from harnesscore.config.loader import load_config
+    config = load_config()
+    skill_path = Path(config.project_root or ".") / ".harness" / "skills" / f"{skill_id}.md"
+    
+    if skill_path.exists():
+        skill_path.unlink()
+        return {"status": "success"}
+    return {"status": "error", "message": "Skill not found"}
+
 @app.get("/api/memory")
 async def get_memory():
     """Returns project memory content and session timeline."""

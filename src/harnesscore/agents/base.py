@@ -48,7 +48,14 @@ async def run_agent_react_loop(
     to break the loop and define the next steps.
     """
     thread_id = getattr(state, "thread_id", str(uuid.uuid4())[:8])
-    llm_with_tools = llm.bind_tools(tools)
+    
+    # --- MCP Tool Discovery ---
+    from harnesscore.mcp.manager import get_mcp_tools
+    config = load_config()
+    mcp_tools = get_mcp_tools(agent_name, config)
+    all_tools = tools + mcp_tools
+    
+    llm_with_tools = llm.bind_tools(all_tools)
     
     # Inject conversational memory into the context string
     recent_chat = []
@@ -215,11 +222,15 @@ async def run_agent_react_loop(
             Journaler.append_entry(harness_dir, je_action.model_dump())
             
             # C. Execute Tool
-            tool_fn = next((t for t in tools if t.__name__ == t_name), None)
+            tool_fn = next((t for t in all_tools if t.__name__ == t_name), None)
             tool_result = ""
             if tool_fn:
                 try:
-                    tool_result = tool_fn(**t_args)
+                    import inspect
+                    if inspect.iscoroutinefunction(tool_fn):
+                        tool_result = await tool_fn(**t_args)
+                    else:
+                        tool_result = tool_fn(**t_args)
                 except Exception as e:
                     tool_result = f"Error executing tool: {e}"
             else:
@@ -281,28 +292,33 @@ async def run_agent_react_loop(
             updated_completed.append(completed_task_id)
             # Remove from pending queue effectively by it being in completed
     
-    # Extract recent thought and message for the Legacy wrapper (used by CLI UI)
-    latest_thought = ""
-    latest_msg = f"Terminated -> {final_next_agent}"
-    
+    # Create a full trace for the web UI from new_journals
+    full_history_logs = []
     for je in new_journals:
-        if je.category == "Thought":
-            latest_thought = je.content
-        elif je.category == "Message":
-            latest_msg = je.content
+        # Map JournalEntry categories to TaskLog action_types for the frontend
+        action_type = "MESSAGE"
+        if je.category == "Thought": action_type = "THOUGHT"
+        elif je.category == "Action": action_type = "TOOL_CALL"
+        elif je.category == "Result": action_type = "TOOL_RESULT"
+        elif je.category == "Interrupt": action_type = "INTERRUPT"
 
-    # If the agent didn't successfully route via a tool, their raw thought is their final response
-    if not route_called and latest_thought:
-        latest_msg = latest_thought
-        latest_thought = "Implicit termination (No tools called)."
+        full_history_logs.append(TaskLog(
+            agent_name=je.role or agent_name,
+            action_type=action_type,
+            details=je.content,
+            logs=getattr(je, "target", "") or "",
+            status="SUCCESS"
+        ))
 
-    # Legacy wrapper
-    log = TaskLog(
-        agent_name=agent_name, action_type="EXECUTION",
-        details=latest_msg,
-        logs=latest_thought,
-        status="SUCCESS"
-    )
+    # If no journals were created but we finished, add a fallback log
+    if not full_history_logs:
+        full_history_logs.append(TaskLog(
+            agent_name=agent_name,
+            action_type="EXECUTION",
+            details="작업이 완료되었습니다.",
+            logs="",
+            status="SUCCESS"
+        ))
     
     return {
         "current_assignee": agent_name,
@@ -310,6 +326,6 @@ async def run_agent_react_loop(
         "tasks": updated_tasks,
         "completed_tasks": updated_completed,
         "journal": new_journals,
-        "history_logs": [log],
+        "history_logs": full_history_logs,
         "total_tokens": loop_tokens
     }

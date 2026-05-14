@@ -22,6 +22,14 @@ export interface LogEntry {
     file_changes?: string[]
 }
 
+export interface JournalEntry {
+    timestamp: string
+    role: string
+    category: string
+    content: string
+    target?: string
+}
+
 export interface FileEntry {
     name: string
     path: string
@@ -94,8 +102,17 @@ interface HarnessState {
     currentFilePath: string
     fileContent: string | null
     fileChanges: string[] // List of modified files in the current run
+    isLoadingFiles: boolean
+    isCodeViewerOpen: boolean
+    isSettingsOpen: boolean
+    isConsoleOpen: boolean
+    journal: JournalEntry[]
     setFiles: (files: FileEntry[], path: string) => void
     setFileContent: (content: string | null) => void
+    setIsLoadingFiles: (loading: boolean) => void
+    setIsCodeViewerOpen: (open: boolean) => void
+    setIsSettingsOpen: (open: boolean) => void
+    setIsConsoleOpen: (open: boolean) => void
 
     // Runtime Stats (StatusBar)
     runtimeStats: RuntimeStats | null
@@ -158,8 +175,17 @@ export const useHarnessStore = create<HarnessState>((set, get) => ({
     currentFilePath: '.',
     fileContent: null,
     fileChanges: [],
-    setFiles: (files, path) => set({ files, currentFilePath: path }),
+    isLoadingFiles: false,
+    isCodeViewerOpen: false,
+    isSettingsOpen: false,
+    isConsoleOpen: false,
+    journal: [],
+    setFiles: (files, path) => set({ files, currentFilePath: path, isLoadingFiles: false }),
     setFileContent: (content) => set({ fileContent: content }),
+    setIsLoadingFiles: (loading) => set({ isLoadingFiles: loading }),
+    setIsCodeViewerOpen: (open) => set({ isCodeViewerOpen: open }),
+    setIsSettingsOpen: (open) => set({ isSettingsOpen: open }),
+    setIsConsoleOpen: (open) => set({ isConsoleOpen: open }),
 
     runtimeStats: null,
     setRuntimeStats: (stats) => set({ runtimeStats: stats }),

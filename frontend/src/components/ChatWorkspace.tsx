@@ -85,7 +85,12 @@ export default function ChatWorkspace({
                 </div>
             </div>
 
-            {/* Chat History - Flex-1 with overflow handles the layout correctly */}
+            {/* 2. Global Activity Progress Bar (Subtle) */}
+            <div className={`h-0.5 w-full overflow-hidden transition-opacity duration-500 ${isRunning && !isInterrupted ? 'opacity-100' : 'opacity-0'}`}>
+                <div className="h-full bg-primary animate-progress-flow"></div>
+            </div>
+
+            {/* Chat History */}
             <div className="flex-1 overflow-y-auto pt-8 pb-8 px-8 flex flex-col gap-8 scroll-smooth" ref={scrollRef}>
                 {messages.length === 0 && (
                     <div className="m-auto flex flex-col items-center justify-center text-center opacity-70">
@@ -147,16 +152,13 @@ export default function ChatWorkspace({
                 })}
             </div>
 
-            {/* Input Area - No longer absolute, push to bottom via flex layout */}
+            {/* Input Area */}
             <div className="p-6 bg-surface-container-low border-t border-ghost-border/15 shrink-0 z-20">
                 <div className="max-w-4xl mx-auto space-y-4">
-                    {/* HITL Detailed Request Panel */}
+                    {/* HITL Panel */}
                     {isInterrupted && interruptDetails && (
                         <div className="bg-surface-container-high border border-secondary/30 rounded-2xl p-5 animate-in slide-in-from-bottom-4 duration-500 shadow-xl overflow-hidden relative">
-                            <div className="absolute top-0 right-0 p-3 opacity-10 pointer-events-none">
-                                <span className="material-symbols-outlined text-[4rem]">verified_user</span>
-                            </div>
-
+                            {/* ... (HITL details) ... */}
                             <div className="flex flex-col gap-4 relative">
                                 <div className="flex items-center justify-between">
                                     <div className="flex items-center gap-2">
@@ -170,7 +172,6 @@ export default function ChatWorkspace({
                                     </div>
                                     <span className="text-[10px] font-black text-secondary uppercase tracking-[0.2em]">Approval_Pending</span>
                                 </div>
-
                                 <div className="space-y-2">
                                     <label className="text-[9px] font-bold text-outline uppercase tracking-widest">Hand-off Request Context</label>
                                     <div className="bg-surface-container-lowest/50 p-4 rounded-xl border border-ghost-border/10">
@@ -179,14 +180,9 @@ export default function ChatWorkspace({
                                         </p>
                                     </div>
                                 </div>
-
                                 <div className="flex items-center gap-3 pt-2">
-                                    <button
-                                        onClick={() => resumeRun()}
-                                        className="flex-1 py-2.5 bg-secondary text-on-secondary rounded-xl font-black text-[11px] uppercase tracking-widest hover:brightness-110 active:scale-[0.98] transition-all shadow-lg shadow-secondary/20 flex items-center justify-center gap-2"
-                                    >
-                                        <span className="material-symbols-outlined text-[1.125rem]">check_circle</span>
-                                        Approve & Proceed
+                                    <button onClick={() => resumeRun()} className="flex-1 py-2.5 bg-secondary text-on-secondary rounded-xl font-black text-[11px] uppercase tracking-widest hover:brightness-110 active:scale-[0.98] transition-all shadow-lg shadow-secondary/20 flex items-center justify-center gap-2">
+                                        <span className="material-symbols-outlined text-[1.125rem]">check_circle</span> Approve & Proceed
                                     </button>
                                 </div>
                             </div>
@@ -197,11 +193,11 @@ export default function ChatWorkspace({
                     {isRunning && !isInterrupted && (
                         <div className="flex items-center gap-3 mb-2 px-1 animate-in fade-in slide-in-from-bottom-1 duration-300">
                             <div className="flex gap-1">
-                                <span className="w-1 h-1 bg-primary rounded-full animate-bounce [animation-delay:-0.3s]"></span>
-                                <span className="w-1 h-1 bg-primary rounded-full animate-bounce [animation-delay:-0.15s]"></span>
-                                <span className="w-1 h-1 bg-primary rounded-full animate-bounce"></span>
+                                <span className={`w-1 h-1 rounded-full animate-bounce [animation-delay:-0.3s] ${AGENT_CONFIG[activeNode || '']?.bg.replace('/20', '') || 'bg-primary'}`}></span>
+                                <span className={`w-1 h-1 rounded-full animate-bounce [animation-delay:-0.15s] ${AGENT_CONFIG[activeNode || '']?.bg.replace('/20', '') || 'bg-primary'}`}></span>
+                                <span className={`w-1 h-1 rounded-full animate-bounce ${AGENT_CONFIG[activeNode || '']?.bg.replace('/20', '') || 'bg-primary'}`}></span>
                             </div>
-                            <span className="text-[10px] text-primary font-black uppercase tracking-widest opacity-80">
+                            <span className={`text-[10px] font-black uppercase tracking-widest opacity-90 ${AGENT_CONFIG[activeNode || '']?.color || 'text-primary'}`}>
                                 {activeText}
                             </span>
                         </div>
@@ -209,9 +205,10 @@ export default function ChatWorkspace({
 
                     <div className="relative group">
                         <textarea
-                            className={`w-full bg-surface-container-highest/50 backdrop-blur-md border rounded-2xl p-5 pr-16 text-sm text-on-surface placeholder:text-outline/50 focus:outline-none focus:ring-2 focus:ring-primary/30 transition-all resize-none min-h-[80px] shadow-sm font-inter
-                                ${isInterrupted ? 'border-secondary/40 ring-secondary/10' : 'border-ghost-border/30'}`}
-                            placeholder={isInterrupted ? "Add steering feedback or 'Approve' to proceed..." : "Ask the swarm to code, refactor or debug..."}
+                            className={`w-full backdrop-blur-md border rounded-2xl p-5 pr-16 text-sm text-on-surface placeholder:text-outline/50 focus:outline-none focus:ring-2 transition-all resize-none min-h-[80px] shadow-sm font-inter
+                                ${isRunning && !isInterrupted ? 'bg-primary/5 border-primary/20 ring-primary/5' : 
+                                  isInterrupted ? 'bg-surface-container-highest/50 border-secondary/40 ring-secondary/10' : 'bg-surface-container-highest/50 border-ghost-border/30 focus:ring-primary/30'}`}
+                            placeholder={isRunning && !isInterrupted ? "에이전트가 작업을 수행하고 있습니다..." : isInterrupted ? "피드백을 입력하거나 '승인'을 눌러 진행하세요..." : "군단(Swarm)에게 작업을 지시하세요..."}
                             value={prompt}
                             onChange={e => setPrompt(e.target.value)}
                             onKeyDown={e => {

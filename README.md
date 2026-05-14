@@ -1,51 +1,87 @@
-# Simple Calculator App
+# 🛰️ HarnessCore AI: Autonomous Multi-Agent Engine
 
-This is a simple calculator application designed to perform basic arithmetic operations.
+> **"스스로 설계하고, 구현하고, 검증하며 진화하는 로컬 코드베이스 에이전트 엔진"**
 
-## Architecture Overview
+HarnessCore AI는 단순한 코드 생성을 넘어, 고도화된 5명의 전문 에이전트가 협업하여 복잡한 소프트웨어 요구사항을 완성하는 **자가 반복형(Self-Iterative) 멀티 에이전트 플랫폼**입니다.
 
-This document outlines the high-level architecture of the Calculator application, detailing its key components, data flow, and design considerations.
+---
 
-### 1. Key Components
+## 🌟 핵심 가치 (Core Philosophy)
 
-The application is structured around a clear separation of concerns, ensuring modularity and maintainability. The main components are:
+- **로컬 코드베이스 우선**: 사용자 환경의 로컬 파일시스템 위에서 직접 작동하며 코드를 빌드하고 테스트합니다.
+- **자율적 루프**: 요구사항이 충족될 때까지 계획(Plan) -> 생성(Generate) -> 검증(Evaluate) 루프를 스스로 반복합니다.
+- **투명한 추론**: 모든 에이전트의 사고 과정(Thought), 행동(Action), 결과(Result)를 실시간으로 관찰하고 개입할 수 있습니다.
+- **무한한 확장성**: MCP(Model Context Protocol)와 동적 스킬 시스템을 통해 에이전트에게 새로운 도구와 지식을 즉시 부여할 수 있습니다.
 
-*   **User Interface (UI) Module**: Responsible for rendering the calculator's visual elements (buttons, display screen) and capturing user interactions. It presents the current state of the calculator to the user.
+---
 
-*   **Input Handler Module**: Acts as an intermediary between the UI and the Calculation Engine. It processes raw UI events (e.g., button clicks) and translates them into meaningful commands or data for the Calculation Engine. This module might handle input validation and basic parsing.
+## 🏗️ 멀티 에이전트 팀 (The Team)
 
-*   **Calculation Engine Module**: The core logic of the calculator. It is responsible for performing arithmetic operations based on the input received. This module maintains the calculator's internal state (current number, operator, previous number, result) and executes operations like addition, subtraction, multiplication, division, and other functions (e.g., clear, equals).
+HarnessCore는 각 분야의 전문가들로 구성된 팀처럼 동작합니다:
 
-*   **State Manager (Implicit within Calculation Engine)**: Manages the current operational state of the calculator, such as the number currently being entered, the pending operation, and the accumulated result. This is often integrated directly into the Calculation Engine for simpler applications.
+1. 👨‍✈️ **Product Owner (PO)**: 요구사항 분석, 태스크 정의 및 팀 조율.
+2. 🏗️ **System Architect (SA)**: 전체 아키텍처 설계, 파일 구조 및 인터페이스 정의.
+3. 💻 **Core Developer (CD)**: 설계에 기반한 실제 코드 구현 및 리팩토링.
+4. 🧪 **QA Evaluator (QA)**: 단위 테스트 작성 및 코드 안정성 검증.
+5. 🎨 **UI Engineer (UI)**: 고도화된 프론트엔드 컴포넌트 및 심미적 디자인 구현.
 
-### 2. Data Flow
+---
 
-The data flow within the application follows a unidirectional pattern, ensuring predictability and easier debugging:
+## 🚀 시작하기 (Getting Started)
 
-1.  **User Interaction**: The user interacts with the UI (e.g., clicks a number button, an operator button).
-2.  **Event Dispatch**: The UI module captures this interaction and dispatches an event to the Input Handler.
-3.  **Command Translation**: The Input Handler processes the UI event and translates it into a specific command or data update (e.g., `appendDigit('5')`, `setOperator('+')`, `executeOperation('=')`).
-4.  **State Update**: The translated command/data is sent to the Calculation Engine. The Calculation Engine updates its internal state and performs the necessary calculations.
-5.  **Result Notification**: After calculation, the Calculation Engine notifies the UI module (or a dedicated display update mechanism) about the new result or current display value.
-6.  **UI Update**: The UI module receives the updated value and refreshes the display accordingly.
+### 1. 설치
+```bash
+git clone https://github.com/sunwonl/haco.git
+cd haco
+./deploy.sh
+```
 
-### 3. Design Patterns and Principles
+### 2. 프로젝트 초기화
+```bash
+harness init
+```
+`.env` 파일에 `GEMINI_API_KEY`를 설정하세요.
 
-*   **Separation of Concerns**: Each module has a distinct responsibility, reducing coupling and increasing cohesion.
-*   **Event-Driven Architecture**: User interactions trigger events, which are processed by different modules.
-*   **Command Pattern (Optional but Recommended)**: Operations (e.g., add, subtract, equals) can be encapsulated as command objects, allowing for easier extension, undo/redo functionality, and cleaner input handling.
-*   **Observer Pattern (for UI updates)**: The UI can observe changes in the Calculation Engine's state, automatically updating the display when a new result is available.
-*   **Single Responsibility Principle (SRP)**: Each class or module should have only one reason to change.
+### 3. 실행 (Web Dashboard)
+```bash
+# 백엔드 서버 실행
+python -m harnesscore.web
+```
+브라우저에서 `http://localhost:8000`에 접속하여 화려한 대시보드를 만나보세요.
 
-### 4. File Structure
+---
 
-For the backend, the core logic and tests are organized as follows:
+## 🛠️ 주요 기능 가이드
 
-*   `backend/calculator.py`: Contains the core calculator functions (`add`, `subtract`, `multiply`, `divide`).
-*   `backend/test_calculator.py`: Contains unit tests for the functions in `calculator.py`.
+### 1. 웹 대시보드 (Web UI)
+- **Workspace**: 에이전트의 활동 내역을 타임라인 뷰로 실시간 모니터링합니다.
+- **Console**: 에이전트의 내부 사고 과정(Thinking)과 실행 로그를 필터링하여 확인합니다.
+- **Memory**: 세션 간에 공유되는 지식 베이스를 확인하고 관리합니다.
 
-### 5. Future Enhancements
+### 2. 설정 및 확장 (Configuration)
+우측 상단의 **[Settings]** 메뉴를 통해 시스템을 튜닝할 수 있습니다.
+- **General**: LLM 모델 선택 및 프로젝트 설정.
+- **MCP Servers**: 외부 도구(GitHub, Slack 등) 연동을 위한 MCP 서버 등록.
+- **Skills**: 에이전트에게 주입할 특수한 업무 규칙 및 가이드라인 편집.
 
-*   **History Feature**: Implement a mechanism within the Calculation Engine to store a log of past operations and results.
-*   **Advanced Functions**: Extend the Calculation Engine to support scientific functions (trigonometry, logarithms, etc.).
-*   **Theme Customization**: Allow users to change the visual theme of the UI.
+---
+
+## 📚 상세 문서 (Documentation)
+
+더 깊이 있는 정보는 다음 문서들을 참고하세요:
+
+- 📖 [사용자 가이드 (User Guide)](./docs/user_guide.md)
+- 🖥️ [UI 상세 매뉴얼 (UI Manual)](./docs/UI_MANUAL.md)
+- 🛠️ [에이전트 확장 가이드 (MCP & Skills)](./docs/EXTENDING_AGENTS.md)
+- 🏗️ [시스템 아키텍처 설계](./docs/SYSTEM_ARCHITECTURE.md)
+- 📋 [프로젝트 로드맵](./docs/roadmap.md)
+
+---
+
+## 🛡️ 라이선스 (License)
+
+HarnessCore AI는 **MIT License**를 따릅니다. 누구나 자유롭게 기여하고 확장할 수 있습니다.
+
+---
+
+> **"Build the Future of Coding with HarnessCore AI."**

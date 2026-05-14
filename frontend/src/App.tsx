@@ -5,6 +5,9 @@ import LogPanel from './components/LogPanel'
 import TopBar from './components/TopBar'
 import ChatWorkspace from './components/ChatWorkspace'
 import FileExplorer from './components/FileExplorer'
+import CodeViewerModal from './components/CodeViewerModal'
+import SettingsModal from './components/SettingsModal'
+import ConsoleModal from './components/ConsoleModal'
 import { useHarnessStore } from './store/useHarnessStore'
 import { useHarnessEngine } from './hooks/useHarnessEngine'
 
@@ -77,6 +80,9 @@ export default function App() {
 
   return (
     <div className={`flex h-screen w-screen overflow-hidden bg-background text-on-surface font-inter ${isResizing ? 'cursor-col-resize select-none' : ''}`}>
+      <CodeViewerModal />
+      <SettingsModal />
+      <ConsoleModal />
       <Sidebar activeTab={activeTab} onTabChange={setActiveTab} />
 
       <main className="flex flex-col flex-1 pl-16 h-full">
@@ -114,7 +120,7 @@ export default function App() {
                 <LogPanel logs={logs} />
               </div>
             </>
-          ) : activeTab === 'docs' ? (
+          ) : (
             <div className="flex-1 flex flex-col overflow-hidden bg-background">
               <div className="flex-1 flex overflow-hidden">
                 {/* Knowledge Base Section */}
@@ -167,18 +173,6 @@ export default function App() {
                   </div>
                 </div>
               </div>
-            </div>
-          ) : (
-            <div className="flex-1 flex flex-col items-center justify-center bg-surface-container-low">
-              <span className="material-symbols-outlined text-[4rem] text-outline/30 mb-4">construction</span>
-              <h2 className="text-xl font-bold text-on-surface uppercase tracking-widest">{activeTab} View</h2>
-              <p className="text-sm text-outline font-mono mt-2">This feature is currently under construction.</p>
-              <button
-                onClick={() => setActiveTab('workspace')}
-                className="mt-8 px-6 py-2 bg-primary text-on-primary rounded-lg font-bold text-xs shadow-lg hover:scale-105 transition-transform"
-              >
-                RETURN TO WORKSPACE
-              </button>
             </div>
           )}
         </section>
