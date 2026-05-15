@@ -119,6 +119,19 @@ class HarnessConfig(BaseModel):
         """Return the model to use for *agent_name* (falls back to default)."""
         return self.llm.agent_models.get(agent_name, self.llm.default_model)
 
+    def provider_requires_api_key(self) -> bool:
+        """Return True when the active provider requires an API key authentication flow."""
+        return self.llm.provider in {"google-genai", "openai", "anthropic", "ollama"}
+
+    def has_valid_authentication(self) -> bool:
+        """Return True when the active provider has valid auth configured."""
+        if self.llm.provider == "google-vertexai":
+            return bool(
+                self.credentials.gcp_credentials_path
+                or os.environ.get("GOOGLE_APPLICATION_CREDENTIALS")
+            )
+        return bool(self.resolve_api_key())
+
     def resolve_api_key(self) -> Optional[str]:
         """Read the API key from the configured environment variable or .env file."""
         # 1. Try environment first

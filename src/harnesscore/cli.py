@@ -142,8 +142,14 @@ def cli(
     console.print(f"  [dim]Prompt:[/dim] {prompt}")
     
     # Credentials check
-    if not config.resolve_api_key():
-        console.print(f"[bold red]Error:[/] API Key not set ({config.credentials.api_key_env})")
+    if not config.has_valid_authentication():
+        if config.provider_requires_api_key():
+            console.print(f"[bold red]Error:[/] API Key not set ({config.credentials.api_key_env})")
+        else:
+            console.print(
+                "[bold red]Error:[/] GCP credentials not configured for Vertex AI. "
+                "Set GOOGLE_APPLICATION_CREDENTIALS or credentials.gcp_credentials_path in .harness/settings.json."
+            )
         raise typer.Exit(1)
         
     harness_dir = Path(config.project_root or ".") / ".harness"
@@ -205,8 +211,14 @@ def chat(
         console.print("[yellow]🔧 Debug Mode Enabled: Detailed tracebacks and silent thoughts will be displayed.[/]")
     
     # Credentials check
-    if not config.resolve_api_key():
-        console.print(f"[bold red]Error:[/] API Key not set ({config.credentials.api_key_env})")
+    if not config.has_valid_authentication():
+        if config.provider_requires_api_key():
+            console.print(f"[bold red]Error:[/] API Key not set ({config.credentials.api_key_env})")
+        else:
+            console.print(
+                "[bold red]Error:[/] GCP credentials not configured for Vertex AI. "
+                "Set GOOGLE_APPLICATION_CREDENTIALS or credentials.gcp_credentials_path in .harness/settings.json."
+            )
         raise typer.Exit(1)
         
     harness_dir = Path(config.project_root or ".") / ".harness"

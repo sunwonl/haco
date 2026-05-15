@@ -91,9 +91,16 @@ def stream_pipeline(thread_id: str, prompt: str = "", resume: str = "false"):
     """Server-Sent Events endpoint to stream graph execution in real time."""
     config = load_config()
 
-    if not config.resolve_api_key():
+    if not config.has_valid_authentication():
         def error_gen():
-            yield f"data: {json.dumps({'type': 'error', 'code': 'API_KEY_NOT_SET', 'message': f'Export {config.credentials.api_key_env} to run the engine.'})}\\n\\n"
+            if config.provider_requires_api_key():
+                message = f'Export {config.credentials.api_key_env} to run the engine.'
+            else:
+                message = (
+                    'Configure GCP credentials for Vertex AI by setting GOOGLE_APPLICATION_CREDENTIALS '
+                    'or credentials.gcp_credentials_path in .harness/settings.json.'
+                )
+            yield f"data: {json.dumps({'type': 'error', 'code': 'AUTH_NOT_CONFIGURED', 'message': message})}\n\n"
         return StreamingResponse(error_gen(), media_type="text/event-stream")
 
     harness_dir = _harness_dir()
@@ -435,10 +442,10 @@ async def get_config():
     from harnesscore.config.loader import load_config
     config = load_config()
     return {
-        "model_id": config.model_id,
-        "location": config.location,
-        "project_id": config.project_id,
-        "api_key_configured": bool(config.resolve_api_key())
+        "model_id": getattr(config, 'model_id', None),
+        "location": getattr(config, 'location', None),
+        "project_id": getattr(config, 'project_id', None),
+        "api_key_configured": config.has_valid_authentication()
     }
 
 @app.post("/api/config")
